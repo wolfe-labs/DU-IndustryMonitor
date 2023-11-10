@@ -8,8 +8,8 @@
   "outputPath": "out",
   "libs": [],
   "builds": {
-    "main": {
-      "name": "main",
+    "xl_main": {
+      "name": "xl_main",
       "type": "control",
       "slots": {}
     }
