@@ -31,11 +31,11 @@ local tier_colors = {
 local state_colors = {
   [0] = { 0.25, 0.25, 0.25 }, -- Loading
   [1] = { 0.25, 0.25, 0.25 }, -- Stopped
-  [2] = { 0.18, 0.34, 0.06 }, -- Running
+  [2] = { 0.08, 0.20, 0.05 }, -- Running
   [3] = { 1.00, 0.50, 0.00 }, -- Missing ingredient
   [4] = { 1.00, 0.50, 0.00 }, -- Output full
   [5] = { 1.00, 0.00, 0.00 }, -- No output
-  [6] = { 0.06, 0.29, 0.34 }, -- Pending
+  [6] = { 0.05, 0.15, 0.20 }, -- Pending
   [7] = { 1.00, 0.00, 0.00 }, -- Missing schematics
 }
 

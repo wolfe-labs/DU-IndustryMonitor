@@ -2,6 +2,8 @@ local json = require('json')
 local Task = require('tasks')
 
 -- Public options
+Refresh_Interval = 5 --export: How often to refresh the screen, in seconds
+Skip_To_Number = 0 --export: Only starts displaying after a certain number of industry
 Include_3D_Printers = true --export
 Include_Assembly_Lines = true --export
 Include_Chemical_Industries = true --export
@@ -14,6 +16,9 @@ Include_Refiners = true --export
 Include_Smelters = true --export
 Include_Transfer_Units = true --export
 
+-- Hide widget
+unit.hideWidget()
+
 -- Ensures a core is linked
 local core = library.getCoreUnit()
 if not core then
@@ -23,6 +28,12 @@ end
 
 -- Gets connected screens
 local screens = library.getLinksByClass('Screen', true) ---@type table<number,Screen>
+
+-- How many industry per page we have
+local page_size = 204
+
+-- How many industry we can keep in memory
+local industry_max = #screens * page_size - 11
 
 -- Bootstrap
 system.print('[ Wolfe Labs Industry Monitor v1.0 ]')
@@ -113,16 +124,16 @@ end
 
 -- Loads all present industry in construct
 local industry_count = 0
+local industry_total = 0
 local industry = {}
 local item_cache = {}
 local task_industry = Task(function(task)
   local ids = core.getElementIdList()
   table.sort(ids)
 
+  local limit_reached = false
   for local_id in task.iterate(ids) do
     if 'Industry' == core.getElementClassById(local_id):sub(1, 8) then
-      industry_count = industry_count + 1
-
       -- Let's have a cache of industry info to speed-up bootstrap
       local item_id = core.getElementItemIdById(local_id)
 
@@ -132,19 +143,37 @@ local task_industry = Task(function(task)
       -- Let's get the industry group
       for group_id, search in task.iterate(industry_group_search) do
         if nil ~= item.displayName:lower():find(search:lower()) then
-          local industry_data = {
-            id = local_id,
-            num = industry_count,
-            tier = item.tier,
-            state = 'Loading',
-            state_code = 0,
-            item = nil,
-          }
-          
-          industry[tostring(industry_count)] = industry_data
-          table.insert(industry_groups[group_id].items[item.tier], industry_data)
+          -- Generates a identifier
+          industry_count = industry_count + 1
+
+          if industry_count > Skip_To_Number then
+            -- Handles limit of industry across all screens
+            if industry_total >= industry_max then
+              limit_reached = true
+              break
+            end
+            industry_total = industry_total + 1 
+
+            local industry_data = {
+              id = local_id,
+              num = industry_count,
+              name = item.displayName,
+              tier = item.tier,
+              state = 'Loading',
+              state_code = 0,
+              item = nil,
+            }
+            
+            industry[industry_count] = industry_data
+            table.insert(industry_groups[group_id].items[item.tier], industry_data)
+          end
           break
         end
+      end
+
+      -- Stops processing after limit
+      if limit_reached then
+        break
       end
     end
   end
@@ -190,7 +219,6 @@ task_industry.next(function()
 
         -- Create pagination
         local pages = {}
-        local page_size = 204
         local current_page = 0
         local current_page_size = page_size
         for entry in task.iterate(entries) do
@@ -207,13 +235,18 @@ task_industry.next(function()
         for screen, page_number in task.iterate(screens) do
           local industry_for_page = {}
       
-          screen.setRenderScript(
-            table.concat({
-              ("data = require('json').decode('%s')"):format(json.encode(pages[page_number] or {})),
-              library.embedFile('render.lua'),
-            }, '\n')
-          )
-          screen.activate()
+          if pages[page_number] then
+            screen.setRenderScript(
+              table.concat({
+                ("data = require('json').decode('%s')"):format(json.encode(pages[page_number] or {})),
+                library.embedFile('render.lua'),
+              }, '\n')
+            )
+            screen.activate()
+          else
+            screen.setRenderScript('')
+            screen.deactivate()
+          end
         end
       end)
     end
@@ -230,12 +263,30 @@ task_industry.next(function()
       local errors = {}
 
       local missing_schematics = {}
+      local missing_inputs = {}
+      local missing_outputs = {}
       local is_missing_schematics = false
+      local is_missing_inputs = false
+      local is_missing_outputs = false
       for industry_unit in task.iterate(industry) do
         if industry_unit.state_code == 7 then
           is_missing_schematics = true
           missing_schematics[industry_unit.schematic] = true
         end
+
+        if industry_unit.num_inputs == 0 then
+          is_missing_inputs = true
+          table.insert(missing_inputs, industry_unit)
+        end
+        if industry_unit.num_outputs == 0 then
+          is_missing_outputs = true
+          table.insert(missing_outputs, industry_unit)
+        end
+      end
+
+      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
+      if Skip_To_Number > 0 then
+        system.print(('Showing range %d to %d'):format(Skip_To_Number + 1, Skip_To_Number + industry_max))
       end
 
       -- Adds missing schematics
@@ -243,6 +294,23 @@ task_industry.next(function()
         local err = {'Missing Schematics:'}
         for _, schematic in task.iterate(missing_schematics) do
           table.insert(err, ' - ' .. schematic)
+        end
+        table.insert(errors, err)
+      end
+
+      -- Adds missing inputs or outputs
+      if is_missing_inputs then
+        local err = {'Inputs not connected:'}
+        for industry_unit in task.iterate(missing_inputs) do
+          table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
+        end
+        table.insert(errors, err)
+      end
+      if is_missing_outputs then
+        system.print('C')
+        local err = {'Outputs not connected:'}
+        for industry_unit in task.iterate(missing_outputs) do
+          table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
         end
         table.insert(errors, err)
       end
@@ -284,9 +352,31 @@ task_industry.next(function()
           if main_product then
             main_product_item = getItem(main_product.id)
           end
-          local itemName = (main_product_item and main_product_item.displayName) or ''
+          local itemName = (main_product_item and main_product_item.displayName) or 'No item selected'
           local itemSize = (main_product_item and main_product_item.size) or ''
           industry[industry_number].item = ('%s %s'):format(itemName, itemSize:upper())
+
+          -- I/O information
+          local inputs = 0
+          local outputs = 0
+          for plug in task.iterate(core.getElementInPlugsById(industry[industry_number].id)) do
+            if plug.elementId then
+              inputs = inputs + 1
+            end
+          end
+          for plug in task.iterate(core.getElementOutPlugsById(industry[industry_number].id)) do
+            if plug.elementId then
+              outputs = outputs + 1
+            end
+          end
+
+          -- For oxygen or hydrogen, override inputs to 1 so we don't see errors
+          if 'pure oxygen' == itemName:lower() or 'pure hydrogen' == itemName:lower() then
+            inputs = 1
+          end
+
+          industry[industry_number].num_inputs = inputs
+          industry[industry_number].num_outputs = outputs
 
           -- Schematic information
           local schematic = nil
@@ -301,7 +391,7 @@ task_industry.next(function()
 
           -- Single batch has been completed?
           local is_completed = false
-          if industry[industry_number].state_code == 1 and info and info.unitsProduced > 0 and info.batchesRemaining < 1 then
+          if industry[industry_number].state_code == 1 and info and info.batchesRequested > 0 and info.batchesRemaining < 1 then
             is_completed = true
           end
           industry[industry_number].completed = (is_completed and info.unitsProduced) or false
@@ -313,6 +403,15 @@ task_industry.next(function()
           elseif 1 ~= industry[industry_number].state_code and info.unitsProduced > 0 and info.batchesRemaining < 0 then
             industry[industry_number].maintain = true
           end
+
+          -- Special state handling when no inputs or no outputs are provided
+          if outputs == 0 and industry[industry_number].state_code ~= 5 then
+            industry[industry_number].state = 'No Linked Output'
+            industry[industry_number].state_code = 3
+          elseif inputs == 0 then
+            industry[industry_number].state = 'No Linked Input'
+            industry[industry_number].state_code = 3
+          end
         end
       end).next(render).next(first_update)
     end
@@ -320,7 +419,7 @@ task_industry.next(function()
 
   -- Setup our refresh loop
   unit:onEvent('onTimer', update)
-  unit.setTimer('refresh', 5)
+  unit.setTimer('refresh', Refresh_Interval)
   update()
 
   -- Setup command
@@ -329,7 +428,7 @@ task_industry.next(function()
     local command = parsed[1]
 
     if 'find' == command then
-      local id = parsed[2]
+      local id = tonumber(parsed[2])
       local industry_unit = industry[id]
 
       if industry_unit then
