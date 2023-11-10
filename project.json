@@ -1,0 +1,31 @@
+{
+  "cli": {
+    "fmtVersion": 4
+  },
+  "name": "@wolfe-labs/IndustryMonitor",
+  "description": "A simple construct-wide industry monitor",
+  "sourcePath": "src",
+  "outputPath": "out",
+  "libs": [],
+  "builds": {
+    "main": {
+      "name": "main",
+      "type": "control",
+      "slots": {}
+    }
+  },
+  "targets": {
+    "development": {
+      "name": "development",
+      "minify": false,
+      "handleErrors": false,
+      "variables": {}
+    }
+  },
+  "internalPaths": [
+    "autoconf/",
+    "cpml/",
+    "pl/",
+    "utils/event"
+  ]
+}
