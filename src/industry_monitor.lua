@@ -126,9 +126,14 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       + vec3(construct.getWorldUp()) * pos.z
   end
 
+  -- Utility to get a destination ::pos string
+  local function get_waypoint(pos)
+    return ('::pos{0,0,%.4f,%.4f,%.4f}'):format(pos.x, pos.y, pos.z)
+  end
+
   -- Utility to set a destination
   local function set_waypoint(pos)
-    system.setWaypoint(('::pos{0,0,%.4f,%.4f,%.4f}'):format(pos.x, pos.y, pos.z))
+    system.setWaypoint(('string' == type(pos) and pos) or get_waypoint(pos))
   end
 
   -- Utility to split a command in spaces
@@ -512,9 +517,15 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
         if industry_unit then
           local pos = vec3(core.getElementPositionById(industry_unit.id))
-          set_waypoint(
-            local_to_world(pos)
-          )
+          local wp = get_waypoint(pos)
+          set_waypoint(wp)
+          system.print('')
+          system.print(('Found industry unit #%d:'):format(id))
+          system.print((' - Element ID: %d'):format(industry_unit.id))
+          if industry_unit.custom_name then
+            system.print((' - Custom Name: %s'):format(industry_unit.custom_name))
+          end
+          system.print((' - Position: %s'):format(wp))
           system.print('Set waypoint to requested industry unit!')
         else
           system.print('Industry unit not found!')

@@ -3,7 +3,8 @@ local text_size = 10
 local text_padding = 2
 local line_size = text_size + text_padding
 
-local font = loadFont('RobotoMono', text_size)
+local font_number = loadFont('RobotoMono', text_size)
+local font_name = loadFont('Oxanium-Medium', text_size)
 local font_title = loadFont('BankGothic', text_size)
 
 local title_color = { 1, 1, 1 }
@@ -29,8 +30,8 @@ local tier_colors = {
 }
 
 local state_colors = {
-  [0] = { 0.15, 0.15, 0.15 }, -- Loading
-  [1] = { 0.25, 0.25, 0.25 }, -- Stopped
+  [0] = { 0.10, 0.10, 0.10 }, -- Loading
+  [1] = { 0.15, 0.15, 0.15 }, -- Stopped
   [2] = { 0.08, 0.20, 0.05 }, -- Running
   [3] = { 1.00, 0.50, 0.00 }, -- Missing ingredient
   [4] = { 1.00, 0.50, 0.00 }, -- Output full
@@ -72,7 +73,7 @@ function renderTitle(title, layer, x, y)
 end
 
 function renderItem(item, layer, x, y)
-  local num = pad(item[1], 4)
+  local num = pad(item[1], 5)
   local tier = item[2]
   local tier_color = tier_colors[tier + 1]
   local is_running = item[3]
@@ -102,13 +103,13 @@ function renderItem(item, layer, x, y)
     label = ('Maintain: %s'):format(item_label)
   end
 
-  local num_width = getTextBounds(font, num)
+  local num_width = getTextBounds(font_number, num)
   
   setNextFillColor(layer, color(tier_color, 0.3))
-  addText(layer, font, num, x, y)
+  addText(layer, font_number, num, x, y)
 
   setNextFillColor(layer, color(state_color))
-  addText(layer, font, label, x + num_width + text_padding, y)
+  addText(layer, font_name, label, x + num_width + text_padding, y)
 end
 
 for _, item in pairs(data) do
