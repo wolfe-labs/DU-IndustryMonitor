@@ -12,6 +12,10 @@ Include_Recyclers = true --export
 Include_Refiners = true --export
 Include_Smelters = true --export
 Include_Transfer_Units = true --export
+Show_Tier_1 = true --export
+Show_Tier_2 = true --export
+Show_Tier_3 = true --export
+Show_Tier_4 = true --export
 
 local json = require('json')
 local Task = require('tasks')
@@ -32,6 +36,14 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   -- How many industry we can keep in memory
   local industry_max = #screens * page_size - 11
+
+  -- List of included tiers
+  local industry_tiers_allowed = {
+    [1] = Show_Tier_1,
+    [2] = Show_Tier_2,
+    [3] = Show_Tier_3,
+    [4] = Show_Tier_4,
+  }
 
   -- General definitions
   local industry_states = {
@@ -135,13 +147,13 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         -- Let's extract current industry info
         local item = getItem(item_id)
 
+        -- Generates a identifier
+        industry_count = industry_count + 1
+
         -- Let's get the industry group
         for group_id, search in task.iterate(industry_group_search) do
           if nil ~= item.displayName:lower():find(search:lower()) then
-            -- Generates a identifier
-            industry_count = industry_count + 1
-
-            if industry_count > Skip_To_Number then
+            if industry_count > Skip_To_Number and industry_tiers_allowed[item.tier] then
               -- Handles limit of industry across all screens
               if industry_total >= industry_max then
                 limit_reached = true
@@ -300,7 +312,6 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           table.insert(errors, err)
         end
         if is_missing_outputs then
-          system.print('C')
           local err = {'Outputs not connected:'}
           for industry_unit in task.iterate(missing_outputs) do
             table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
