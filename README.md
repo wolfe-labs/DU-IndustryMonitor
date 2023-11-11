@@ -2,6 +2,8 @@
 
 A fast and simple factory monitor script, for all your industrialist needs!
 
+Inspired on the idea of [BartaRS's Factory Monitoring Expanded](https://github.com/BartasRS/Factory-Monitoring-Expanded) script.
+
 ![](screenshot.png)
 
 ## Installation
