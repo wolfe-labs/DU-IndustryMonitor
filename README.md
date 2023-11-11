@@ -15,6 +15,7 @@ After installing into a Programming Board, link it to your factory's Core Unit a
 ## Usage
 
 After activating the Programming Board, you will see some information on your Lua chat:
+- The current range (first and last industry codes) that are currently visible;
 - List of industry with missing schematics;
 - List of industry with missing inputs or outputs;
 - List of industry that might be "stuck" after a game update;
@@ -35,7 +36,7 @@ You can customize what information gets displayed by right-clicking the Programm
 
 - **Show Industry Name** will show the custom element names for any elements you have renamed;
 - **Refresh Interval** allows you to set how many seconds between each screen refresh;
-- **Skip To Number** allows you to skip a certain number of industry units, in case you want to set-up a wall with more than a single row of screens;
+- **Range Start** sets where the displayed range of industry should start, in case you want to set-up a wall with more than a single row of screens;
 
 ## Support & Special Thanks
 

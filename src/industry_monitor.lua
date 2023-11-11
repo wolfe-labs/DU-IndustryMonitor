@@ -1,6 +1,6 @@
 -- Public options exposed to Dual Universe
 Refresh_Interval = 5 --export: How often to refresh the screen, in seconds
-Skip_To_Number = 0 --export: Only starts displaying after a certain number of industry
+Range_Start = 1 --export: Only starts displaying after a certain number of industry
 Include_3D_Printers = true --export
 Include_Assembly_Lines = true --export
 Include_Chemical_Industries = true --export
@@ -17,6 +17,8 @@ Show_Tier_2 = true --export
 Show_Tier_3 = true --export
 Show_Tier_4 = true --export
 Show_Industry_Name = false --export: Shows industry name instead of item name
+
+Range_Start = math.max(1, Range_Start)
 
 local json = require('json')
 local Task = require('tasks')
@@ -189,7 +191,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         -- Let's get the industry group
         for group_id, search in task.iterate(industry_group_search) do
           if nil ~= item.displayName:lower():find(search:lower()) and (search:lower() ~= 'refiner' or nil == item.displayName:lower():find('honeycomb')) then
-            if industry_count > Skip_To_Number and industry_tiers_allowed[item.tier] then
+            if industry_count >= Range_Start and industry_tiers_allowed[item.tier] then
               -- Handles limit of industry across all screens
               if industry_total >= industry_max then
                 limit_reached = true
@@ -344,9 +346,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         end
 
         system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
-        if Skip_To_Number > 0 then
-          system.print(('Showing range %d to %d'):format(Skip_To_Number + 1, Skip_To_Number + industry_max))
-        end
+        system.print(('Showing range %d to %d'):format(Range_Start, industry_count - 1))
+        system.print('You can customize this range with the Range Start option')
 
         -- Adds missing schematics
         if is_missing_schematics then
@@ -535,7 +536,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   end)
 
   return {
-    version = '1.0.1',
+    version = '1.0.2',
   }
 end
 
