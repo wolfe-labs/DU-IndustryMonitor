@@ -6,7 +6,7 @@ A fast and simple factory monitor script, for all your industrialist needs!
 
 ## Installation
 
-Download a pre-compiler JSON file from the "Releases" tab, copy its contents and install it by right-clicking a Programming Board, selecting "Advanced" and then "Copy Lua configuration from clipboard".
+Download a pre-compiler JSON file from the "Releases" tab, copy its contents and install it by right-clicking a Programming Board, selecting "Advanced" and then "Paste Lua configuration from clipboard".
 
 After installing into a Programming Board, link it to your factory's Core Unit and then to each of your screens, from first to last.
 
