@@ -224,6 +224,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
   end)
 
+  -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
   task_industry.next(function()
     -- Main render loop
     local task_render = nil
@@ -263,6 +264,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               end
             end
 
+            -- If we have any items (other than the category heading) let's add it to the render queue
             if #items > 1 then
               entries = array_merge(entries, items)
             end
@@ -283,6 +285,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             table.insert(pages[current_page], entry)
           end
         
+          -- Goes through each of the pages and renders their respective pages
           for screen, page_number in task.iterate(screens) do
             if pages[page_number] then
               screen.setRenderScript(
