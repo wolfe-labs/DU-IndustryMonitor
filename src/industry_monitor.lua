@@ -20,6 +20,15 @@ Show_Tier_4 = true --export
 local json = require('json')
 local Task = require('tasks')
 
+local function embed_json(data)
+  return ("data = require('json').decode('%s')")
+    :format(
+      json.encode(data)
+        :gsub('\\', '\\\\')
+        :gsub('\'', '\\\'')
+    )
+end
+
 ---@param screens table<number,Screen> The screens where everything is going to be rendered
 ---@param page_size number How many lines are supported per page by the render script
 ---@param ui_render_script string The render script
@@ -34,8 +43,11 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     return unit.exit()
   end
 
-  -- How many industry we can keep in memory
-  local industry_max = #screens * page_size - 11
+  -- Ensures at least one screen is linked
+  if #screens == 0 then
+    system.print('ERROR: No screen not connected!')
+    return unit.exit()
+  end
 
   -- List of included tiers
   local industry_tiers_allowed = {
@@ -70,6 +82,13 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   if Include_Glass_Furnaces then industry_group_search['Glass Furnace'] = 'Glass Furnaces' end
   if Include_Honeycomb_Refiners then industry_group_search['Honeycomb Refiner'] = 'Honeycomb Refineries' end
   if Include_Metalwork_Industries then industry_group_search['Metalwork Industry'] = 'Metalwork Industries' end
+
+  -- How many industry we can keep in memory
+  local headers_max = 0
+  for _ in pairs(industry_group_search) do
+    headers_max = headers_max + 1
+  end
+  local industry_max = #screens * page_size - headers_max
 
   local industry_groups = {}
   for _, name in pairs(industry_group_search) do
@@ -152,7 +171,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
         -- Let's get the industry group
         for group_id, search in task.iterate(industry_group_search) do
-          if nil ~= item.displayName:lower():find(search:lower()) then
+          if nil ~= item.displayName:lower():find(search:lower()) and (search:lower() ~= 'refiner' or nil == item.displayName:lower():find('honeycomb')) then
             if industry_count > Skip_To_Number and industry_tiers_allowed[item.tier] then
               -- Handles limit of industry across all screens
               if industry_total >= industry_max then
@@ -243,7 +262,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             if pages[page_number] then
               screen.setRenderScript(
                 table.concat({
-                  ("data = require('json').decode('%s')"):format(json.encode(pages[page_number] or {})),
+                  embed_json(pages[page_number] or {}),
                   ui_render_script,
                 }, '\n')
               )
@@ -268,11 +287,11 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         local errors = {}
 
         local missing_schematics = {}
+        local is_missing_schematics = false
+
         local missing_inputs = {}
         local missing_outputs = {}
-        local is_missing_schematics = false
-        local is_missing_inputs = false
-        local is_missing_outputs = false
+        local stuck = {}
         for industry_unit in task.iterate(industry) do
           if industry_unit.state_code == 7 then
             is_missing_schematics = true
@@ -280,12 +299,14 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           end
 
           if industry_unit.num_inputs == 0 then
-            is_missing_inputs = true
             table.insert(missing_inputs, industry_unit)
           end
           if industry_unit.num_outputs == 0 then
-            is_missing_outputs = true
             table.insert(missing_outputs, industry_unit)
+          end
+
+          if industry_unit.is_stuck then
+            table.insert(stuck, industry_unit)
           end
         end
 
@@ -304,16 +325,25 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         end
 
         -- Adds missing inputs or outputs
-        if is_missing_inputs then
+        if #missing_inputs > 0 then
           local err = {'Inputs not connected:'}
           for industry_unit in task.iterate(missing_inputs) do
             table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
           end
           table.insert(errors, err)
         end
-        if is_missing_outputs then
+        if #missing_outputs > 0 then
           local err = {'Outputs not connected:'}
           for industry_unit in task.iterate(missing_outputs) do
+            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
+          end
+          table.insert(errors, err)
+        end
+
+        -- Adds stuck machines
+        if #stuck > 0 then
+          local err = {'Possibly stuck industry:'}
+          for industry_unit in task.iterate(stuck) do
             table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
           end
           table.insert(errors, err)
@@ -363,6 +393,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             -- I/O information
             local inputs = 0
             local outputs = 0
+            local output_element_id = nil
             for plug in task.iterate(core.getElementInPlugsById(industry[industry_number].id)) do
               if plug.elementId then
                 inputs = inputs + 1
@@ -371,6 +402,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             for plug in task.iterate(core.getElementOutPlugsById(industry[industry_number].id)) do
               if plug.elementId then
                 outputs = outputs + 1
+                output_element_id = plug.elementId
               end
             end
 
@@ -392,6 +424,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             -- Basic informations
             industry[industry_number].state = industry_states[info.state]
             industry[industry_number].state_code = info.state
+            industry[industry_number].is_stuck = false
 
             -- Single batch has been completed?
             local is_completed = false
@@ -404,12 +437,27 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             industry[industry_number].maintain = false
             if info.maintainProductAmount > 0 then
               industry[industry_number].maintain = info.maintainProductAmount
+
+              -- Handles special case when industry gets "stuck" on "pending"
+              if info.state == 6 then
+                -- Estimates how much mass there should be in that container
+                local output_mass_empty = getItem(core.getElementItemIdById(output_element_id)).unitMass
+                local output_mass_current = core.getElementMassById(output_element_id)
+                local target_mass = (output_mass_empty + main_product_item.unitMass * info.maintainProductAmount) * 0.75
+
+                -- Handles possibly stuck states
+                if output_mass_current < target_mass then
+                  industry[industry_number].is_stuck = true
+                end
+              end
             elseif 1 ~= industry[industry_number].state_code and info.unitsProduced > 0 and info.batchesRemaining < 0 then
               industry[industry_number].maintain = true
             end
 
             -- Special state handling when no inputs or no outputs are provided
-            if outputs == 0 and industry[industry_number].state_code ~= 5 then
+            if industry[industry_number].is_stuck then
+              industry[industry_number].state_code = 5
+            elseif outputs == 0 and industry[industry_number].state_code ~= 5 then
               industry[industry_number].state = 'No Linked Output'
               industry[industry_number].state_code = 3
             elseif inputs == 0 then
