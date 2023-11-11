@@ -10,5 +10,5 @@ local page_size = 204
 local render_script = library.embedFile('xl_render.lua')
 
 -- Initializes the monitor
-system.print('[ Wolfe Labs Industry Monitor XL v1.0.0 ]')
-IndustryMonitor(screens, page_size, render_script)
+local monitor = IndustryMonitor(screens, page_size, render_script)
+system.print(('[ Wolfe Labs Industry Monitor XL v%s ]'):format(monitor.version))

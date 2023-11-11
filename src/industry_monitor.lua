@@ -16,6 +16,7 @@ Show_Tier_1 = true --export
 Show_Tier_2 = true --export
 Show_Tier_3 = true --export
 Show_Tier_4 = true --export
+Show_Industry_Name = false --export: Shows industry name instead of item name
 
 local json = require('json')
 local Task = require('tasks')
@@ -139,6 +140,18 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     return tokens
   end
 
+  -- Utility to print an item name
+  local function item_name(item)
+    return ('%s %s'):format(
+      item.displayName
+        :gsub('Atmospheric', 'Atmo.')
+        :gsub('Expanded', 'Exp.')
+        :gsub('Uncommon', 'Unc.')
+        :gsub('Advanced', 'Adv.'),
+      (item.size or ''):upper()
+    )
+  end
+
   -- Gets items by id with caching
   local item_cache = {}
   local function getItem(id)
@@ -152,7 +165,6 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   local industry_count = 0
   local industry_total = 0
   local industry = {}
-  local item_cache = {}
   local task_industry = Task(function(task)
     local ids = core.getElementIdList()
     table.sort(ids)
@@ -180,10 +192,17 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               end
               industry_total = industry_total + 1 
 
+              -- Gets custom industry unit name
+              local industry_custom_name = core.getElementNameById(local_id)
+              if industry_custom_name == ('%s [%d]'):format(item.displayNameWithSize, local_id) then
+                industry_custom_name = nil
+              end
+
               local industry_data = {
                 id = local_id,
                 num = industry_count,
                 name = item.displayName,
+                custom_name = industry_custom_name,
                 tier = item.tier,
                 state = 'Loading',
                 state_code = 0,
@@ -224,13 +243,19 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               for industry_unit in task.iterate(tier_items) do
                 local is_running = industry_unit.state_code == 2 or industry_unit.state == 6
 
+                -- Should we show the industry unit name instead of the item?
+                local display_name = industry_unit.item or ''
+                if Show_Industry_Name and industry_unit.custom_name then
+                  display_name = industry_unit.custom_name
+                end
+
                 table.insert(items, {
                   industry_unit.num,
                   industry_unit.tier,
                   is_running,
                   industry_unit.state_code,
                   industry_unit.state,
-                  industry_unit.item or '',
+                  display_name,
                   industry_unit.completed,
                   industry_unit.schematic or '',
                   industry_unit.maintain,
@@ -386,9 +411,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             if main_product then
               main_product_item = getItem(main_product.id)
             end
-            local itemName = (main_product_item and main_product_item.displayName) or 'No item selected'
-            local itemSize = (main_product_item and main_product_item.size) or ''
-            industry[industry_number].item = ('%s %s'):format(itemName, itemSize:upper())
+            local itemName = (main_product_item and item_name(main_product_item)) or 'No item selected'
+            industry[industry_number].item = itemName
 
             -- I/O information
             local inputs = 0
@@ -495,6 +519,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       end
     end)
   end)
+
+  return {
+    version = '1.0.1',
+  }
 end
 
 return IndustryMonitor
