@@ -2,6 +2,9 @@
   Very basic implementation of background tasks
 ]]
 
+-- Makes sure we only ever use 10% of the instruction limit before yielding
+local MAX_CPU_TIME = 0.10
+
 local tasks = {}
 local iTasks = 0
 
@@ -84,22 +87,17 @@ local function reject(_, data, err)
   coroutine.yield()
 end
 
-local g_iteractions = 0
-local function count_iteration(limit)
-  g_iteractions = g_iteractions + 1
-  if g_iteractions % limit == 0 then
+local yield_limit = system.getInstructionLimit() * MAX_CPU_TIME
+local function do_rate_limiting()
+  if system.getInstructionCount() >= yield_limit then
     coroutine.yield()
   end
 end
-local function iterate(value, yield_every)
-  -- This is how ofter we want to yield the iteration
-  yield_every = yield_every or 1000
-
+local function iterate(value)
   -- Gets a list of all keys
   local keys = {}
   for k in pairs(value) do
-    -- Rate limiting
-    count_iteration(yield_every)
+    do_rate_limiting()
     
     table.insert(keys, k)
   end
@@ -108,8 +106,7 @@ local function iterate(value, yield_every)
   -- Now, we can actually iterate over that temporary table
   local i = 0
   return function()
-    -- Rate limiting
-    count_iteration(yield_every)
+    do_rate_limiting()
     
     -- Increments local iterator, returns value if any
     i = i + 1
