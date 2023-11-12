@@ -561,7 +561,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   end)
 
   return {
-    version = '1.0.3',
+    version = '1.0.4',
   }
 end
 
