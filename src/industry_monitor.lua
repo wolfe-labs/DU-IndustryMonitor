@@ -440,7 +440,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             end
 
             -- For oxygen or hydrogen, override inputs to 1 so we don't see errors
-            if 'pure oxygen' == itemName:lower() or 'pure hydrogen' == itemName:lower() then
+            if itemName:lower():gmatch('pure hydrogen') or itemName:lower():gmatch('pure oxygen') then
               inputs = 1
             end
 
