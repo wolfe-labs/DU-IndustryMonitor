@@ -2,8 +2,8 @@
   Very basic implementation of background tasks
 ]]
 
--- Makes sure we only ever use 10% of the instruction limit before yielding
-local MAX_CPU_TIME = 0.10
+-- Makes sure we only ever use 20% of the instruction limit before yielding
+local MAX_CPU_TIME = 0.20
 
 local tasks = {}
 local iTasks = 0
@@ -87,9 +87,10 @@ local function reject(_, data, err)
   coroutine.yield()
 end
 
+local active_task_count = 0
 local yield_limit = system.getInstructionLimit() * MAX_CPU_TIME
 local function do_rate_limiting()
-  if system.getInstructionCount() >= yield_limit then
+  if system.getInstructionCount() >= (yield_limit / math.max(active_task_count, 1)) then
     coroutine.yield()
   end
 end
@@ -120,6 +121,13 @@ local function iterate(value)
 end
 
 system:onEvent('onUpdate', function()
+  -- Gets an updated task count
+  active_task_count = 0
+  for _ in pairs(tasks) do
+    active_task_count = active_task_count + 1
+  end
+
+  -- Processes each of the tasks
   for _, data in pairs(tasks) do
     coroutine.resume(data.co, {
       resolve = function(value)
