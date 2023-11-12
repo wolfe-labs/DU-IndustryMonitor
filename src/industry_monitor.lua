@@ -518,14 +518,17 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
         if industry_unit then
           local pos = vec3(core.getElementPositionById(industry_unit.id))
-          local wp = get_waypoint(pos)
+            -- The position will always be on the bottom of the industry unit, so let's position it 0.5m into it to make it easier to find
+            + vec3(core.getElementUpById(industry_unit.id)) * 0.5
+
+          local wp = get_waypoint(local_to_world(pos))
           set_waypoint(wp)
+
           system.print('')
           system.print(('Found industry unit #%d:'):format(id))
           system.print((' - Element ID: %d'):format(industry_unit.id))
-          if industry_unit.custom_name then
-            system.print((' - Custom Name: %s'):format(industry_unit.custom_name))
-          end
+          system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
+          system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
           system.print((' - Position: %s'):format(wp))
           system.print('Set waypoint to requested industry unit!')
         else
@@ -536,7 +539,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   end)
 
   return {
-    version = '1.0.2',
+    version = '1.0.3',
   }
 end
 
