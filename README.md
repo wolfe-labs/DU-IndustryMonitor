@@ -30,6 +30,8 @@ The code's color indicates the industry unit's tier (Basic, Uncommon, Advanced o
 
 You can locate any industry unit in your factory by taking the code displayed on the screens and typing the following command `find 1234`, where *1234* is the code of your industry. Your destination will be set to the machine, along with some extra information about it being displayed in the Lua chat.
 
+You can also view a list with all detected errors on your construct with the command `error_check`.
+
 ## Configuration
 
 You can customize what information gets displayed by right-clicking the Programming Board, going to "Advanced" and then selecting "Edit Lua parameters", from there, you should be able to select which types and tiers of industry are going to be displayed, along with a few extra options:

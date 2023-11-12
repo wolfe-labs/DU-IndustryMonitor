@@ -233,6 +233,115 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
   task_industry.next(function()
+
+    -- Setup commands
+    local commands = {}
+
+    function commands.find(id)
+      local id = tonumber(id)
+      local industry_unit = industry[id]
+
+      if industry_unit then
+        local pos = vec3(core.getElementPositionById(industry_unit.id))
+          -- The position will always be on the bottom of the industry unit, so let's position it 0.5m into it to make it easier to find
+          + vec3(core.getElementUpById(industry_unit.id)) * 0.5
+
+        local wp = get_waypoint(local_to_world(pos))
+        set_waypoint(wp)
+
+        system.print('')
+        system.print(('Found industry unit #%d:'):format(id))
+        system.print((' - Element ID: %d'):format(industry_unit.id))
+        system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
+        system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
+        system.print((' - Position: %s'):format(wp))
+        system.print('Set waypoint to requested industry unit!')
+      else
+        system.print('Industry unit not found!')
+      end
+    end
+
+    function commands.error_check()
+      Task(function(task)
+        local errors = {}
+
+        local missing_schematics = {}
+        local is_missing_schematics = false
+
+        local missing_inputs = {}
+        local missing_outputs = {}
+        local stuck = {}
+        for industry_unit in task.iterate(industry) do
+          if industry_unit.state_code == 7 then
+            is_missing_schematics = true
+            missing_schematics[industry_unit.schematic] = true
+          end
+
+          if industry_unit.num_inputs == 0 then
+            table.insert(missing_inputs, industry_unit)
+          end
+          if industry_unit.num_outputs == 0 then
+            table.insert(missing_outputs, industry_unit)
+          end
+
+          if industry_unit.is_stuck then
+            table.insert(stuck, industry_unit)
+          end
+        end
+
+        -- Adds missing schematics
+        if is_missing_schematics then
+          local err = {'Missing Schematics:'}
+          for _, schematic in task.iterate(missing_schematics) do
+            table.insert(err, ' - ' .. schematic)
+          end
+          table.insert(errors, err)
+        end
+
+        -- Adds missing inputs or outputs
+        if #missing_inputs > 0 then
+          local err = {'Inputs not connected:'}
+          for industry_unit in task.iterate(missing_inputs) do
+            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
+          end
+          table.insert(errors, err)
+        end
+        if #missing_outputs > 0 then
+          local err = {'Outputs not connected:'}
+          for industry_unit in task.iterate(missing_outputs) do
+            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
+          end
+          table.insert(errors, err)
+        end
+
+        -- Adds stuck machines
+        if #stuck > 0 then
+          local err = {'Possibly stuck industry:'}
+          for industry_unit in task.iterate(stuck) do
+            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
+          end
+          table.insert(errors, err)
+        end
+        
+        -- Renders errors
+        if #errors > 0 then
+          for error in task.iterate(errors) do
+            system.print('')
+            
+            if 'string' == type(error) then
+              system.print(error)
+            else
+              for line in task.iterate(error) do
+                system.print(line)
+              end
+            end
+          end
+        else
+          system.print('No errors have been found!')
+        end
+      end)
+    end
+
     -- Main render loop
     local task_render = nil
     local function render()
@@ -318,91 +427,17 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         return
       end
       is_first_update = false
-      Task(function(task)
-        local errors = {}
 
-        local missing_schematics = {}
-        local is_missing_schematics = false
+      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
+      system.print(('Showing range %d to %d'):format(Range_Start, industry_count - 1))
+      system.print('You can customize this range with the Range Start option')
 
-        local missing_inputs = {}
-        local missing_outputs = {}
-        local stuck = {}
-        for industry_unit in task.iterate(industry) do
-          if industry_unit.state_code == 7 then
-            is_missing_schematics = true
-            missing_schematics[industry_unit.schematic] = true
-          end
+      commands.error_check()
 
-          if industry_unit.num_inputs == 0 then
-            table.insert(missing_inputs, industry_unit)
-          end
-          if industry_unit.num_outputs == 0 then
-            table.insert(missing_outputs, industry_unit)
-          end
-
-          if industry_unit.is_stuck then
-            table.insert(stuck, industry_unit)
-          end
-        end
-
-        system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
-        system.print(('Showing range %d to %d'):format(Range_Start, industry_count - 1))
-        system.print('You can customize this range with the Range Start option')
-
-        -- Adds missing schematics
-        if is_missing_schematics then
-          local err = {'Missing Schematics:'}
-          for _, schematic in task.iterate(missing_schematics) do
-            table.insert(err, ' - ' .. schematic)
-          end
-          table.insert(errors, err)
-        end
-
-        -- Adds missing inputs or outputs
-        if #missing_inputs > 0 then
-          local err = {'Inputs not connected:'}
-          for industry_unit in task.iterate(missing_inputs) do
-            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
-          end
-          table.insert(errors, err)
-        end
-        if #missing_outputs > 0 then
-          local err = {'Outputs not connected:'}
-          for industry_unit in task.iterate(missing_outputs) do
-            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
-          end
-          table.insert(errors, err)
-        end
-
-        -- Adds stuck machines
-        if #stuck > 0 then
-          local err = {'Possibly stuck industry:'}
-          for industry_unit in task.iterate(stuck) do
-            table.insert(err, (' - [%d] %s'):format(industry_unit.num, industry_unit.name))
-          end
-          table.insert(errors, err)
-        end
-        
-        -- Renders errors
-        if #errors > 0 then
-          for error in task.iterate(errors) do
-            system.print('')
-            
-            if 'string' == type(error) then
-              system.print(error)
-            else
-              for line in task.iterate(error) do
-                system.print(line)
-              end
-            end
-          end
-        else
-          system.print('No errors have been found!')
-        end
-        system.print('')
-        system.print('Commands:')
-        system.print(' - find [code]: sets waypoint to industry unit with matching code')
-      end)
+      system.print('')
+      system.print('Commands:')
+      system.print(' - find [code]: sets waypoint to industry unit with matching code')
+      system.print(' - error_check: re-runs the error check above')
     end
 
     -- Main update loop
@@ -507,33 +542,20 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     unit.setTimer('refresh', Refresh_Interval)
     update()
 
-    -- Setup command
+    -- Monitors chat for commands
     system:onEvent('onInputText', function(_, text)
       local parsed = split(text)
       local command = parsed[1]
+      
+      -- Parses arguments
+      local arguments = {}
+      for i = 2, #parsed do
+        table.insert(arguments, parsed[i])
+      end
 
-      if 'find' == command then
-        local id = tonumber(parsed[2])
-        local industry_unit = industry[id]
-
-        if industry_unit then
-          local pos = vec3(core.getElementPositionById(industry_unit.id))
-            -- The position will always be on the bottom of the industry unit, so let's position it 0.5m into it to make it easier to find
-            + vec3(core.getElementUpById(industry_unit.id)) * 0.5
-
-          local wp = get_waypoint(local_to_world(pos))
-          set_waypoint(wp)
-
-          system.print('')
-          system.print(('Found industry unit #%d:'):format(id))
-          system.print((' - Element ID: %d'):format(industry_unit.id))
-          system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
-          system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
-          system.print((' - Position: %s'):format(wp))
-          system.print('Set waypoint to requested industry unit!')
-        else
-          system.print('Industry unit not found!')
-        end
+      -- Invokes the command
+      if 'function' == type(commands[command]) then
+        commands[command](table.unpack(arguments))
       end
     end)
   end)
