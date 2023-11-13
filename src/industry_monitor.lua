@@ -170,7 +170,9 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   -- Loads all present industry in construct
   local industry_count = 0
+  local industry_range_last = 0
   local industry_total = 0
+  local industry_ids = {}
   local industry = {}
   local task_industry = Task(function(task)
     local ids = core.getElementIdList()
@@ -179,53 +181,56 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     local limit_reached = false
     for local_id in task.iterate(ids) do
       if 'Industry' == core.getElementClassById(local_id):sub(1, 8) then
-        -- Let's have a cache of industry info to speed-up bootstrap
-        local item_id = core.getElementItemIdById(local_id)
-
-        -- Let's extract current industry info
-        local item = getItem(item_id)
-
         -- Generates a identifier
         industry_count = industry_count + 1
+        industry_ids[industry_count] = local_id
 
-        -- Let's get the industry group
-        for group_id, search in task.iterate(industry_group_search) do
-          if nil ~= item.displayName:lower():find(search:lower()) and (search:lower() ~= 'refiner' or nil == item.displayName:lower():find('honeycomb')) then
-            if industry_count >= Range_Start and industry_tiers_allowed[item.tier] then
-              -- Handles limit of industry across all screens
-              if industry_total >= industry_max then
-                limit_reached = true
-                break
+        -- Only does extra processing inside our "processing window"
+        if not limit_reached then
+          -- Let's have a cache of industry info to speed-up bootstrap
+          local item_id = core.getElementItemIdById(local_id)
+
+          -- Let's extract current industry info
+          local item = getItem(item_id)
+
+          -- Counts up until limit_reached == true, this will determine our max number
+          industry_range_last = industry_range_last + 1
+
+          -- Let's get the industry group
+          for group_id, search in task.iterate(industry_group_search) do
+            if nil ~= item.displayName:lower():find(search:lower()) and (search:lower() ~= 'refiner' or nil == item.displayName:lower():find('honeycomb')) then
+              if industry_count >= Range_Start and industry_tiers_allowed[item.tier] then
+                industry_total = industry_total + 1 
+
+                -- Gets custom industry unit name
+                local industry_custom_name = core.getElementNameById(local_id)
+                if industry_custom_name == ('%s [%d]'):format(item.displayNameWithSize, local_id) then
+                  industry_custom_name = nil
+                end
+
+                local industry_data = {
+                  id = local_id,
+                  num = industry_count,
+                  name = item.displayName,
+                  custom_name = industry_custom_name,
+                  tier = item.tier,
+                  state = 'Loading',
+                  state_code = 0,
+                  item = nil,
+                }
+                
+                industry[industry_count] = industry_data
+                table.insert(industry_groups[group_id].items[item.tier], industry_data)
               end
-              industry_total = industry_total + 1 
-
-              -- Gets custom industry unit name
-              local industry_custom_name = core.getElementNameById(local_id)
-              if industry_custom_name == ('%s [%d]'):format(item.displayNameWithSize, local_id) then
-                industry_custom_name = nil
-              end
-
-              local industry_data = {
-                id = local_id,
-                num = industry_count,
-                name = item.displayName,
-                custom_name = industry_custom_name,
-                tier = item.tier,
-                state = 'Loading',
-                state_code = 0,
-                item = nil,
-              }
-              
-              industry[industry_count] = industry_data
-              table.insert(industry_groups[group_id].items[item.tier], industry_data)
+              break
             end
+          end
+
+          -- Handles limit of industry across all screens
+          if industry_count >= industry_max then
+            limit_reached = true
             break
           end
-        end
-
-        -- Stops processing after limit
-        if limit_reached then
-          break
         end
       end
     end
@@ -428,8 +433,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       end
       is_first_update = false
 
-      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
-      system.print(('Showing range %d to %d'):format(Range_Start, industry_count - 1))
+      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_count))
+      system.print(('Showing range %d to %d, out of %d total units on construct'):format(Range_Start, industry_range_last, industry_count))
       system.print('You can customize this range with the Range Start option')
 
       commands.error_check()
