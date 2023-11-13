@@ -120,6 +120,17 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     return result
   end
 
+  -- Utility to merge objects
+  local function object_merge(target, ...)
+    local arrays = {...}
+    for _, object in pairs(arrays) do
+      for key, value in pairs(object) do
+        target[key] = value
+      end
+    end
+    return target
+  end
+
   -- Utility to get world position
   local function local_to_world(pos)
     return vec3(construct.getWorldPosition())
@@ -168,11 +179,49 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     return item_cache[id]
   end
 
+  -- Gets industry base information
+  local industry_ids = {}
+  local industry_numbers = {}
+  local function get_industry_information(task, local_id)
+    -- Let's have a cache of industry info to speed-up bootstrap
+    local item_id = core.getElementItemIdById(local_id)
+
+    -- Let's extract current industry info
+    local item = getItem(item_id)
+
+    -- Gets custom industry unit name
+    local industry_custom_name = core.getElementNameById(local_id)
+    if industry_custom_name == ('%s [%d]'):format(item.displayNameWithSize, local_id) then
+      industry_custom_name = nil
+    end
+
+    -- Let's get the industry group
+    local group = nil
+    for group_id, search in task.iterate(industry_group_search) do
+      if nil ~= item.displayName:lower():find(search:lower()) and (search:lower() ~= 'refiner' or nil == item.displayName:lower():find('honeycomb')) then
+        group = group_id
+        break
+      end
+    end
+    
+    -- Returns final information
+    return {
+      id = local_id,
+      num = industry_numbers[local_id],
+      name = item.displayName,
+      group_id = group,
+      custom_name = industry_custom_name,
+      tier = item.tier,
+      state = 'Loading',
+      state_code = 0,
+      item = nil,
+    }
+  end
+
   -- Loads all present industry in construct
   local industry_count = 0
   local industry_range_last = 0
   local industry_total = 0
-  local industry_ids = {}
   local industry = {}
   local task_industry = Task(function(task)
     local ids = core.getElementIdList()
@@ -184,6 +233,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         -- Generates a identifier
         industry_count = industry_count + 1
         industry_ids[industry_count] = local_id
+        industry_numbers[local_id] = industry_count
 
         -- Only does extra processing inside our "processing window"
         if not limit_reached then
@@ -196,45 +246,133 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           -- Counts up until limit_reached == true, this will determine our max number
           industry_range_last = industry_range_last + 1
 
-          -- Let's get the industry group
-          for group_id, search in task.iterate(industry_group_search) do
-            if nil ~= item.displayName:lower():find(search:lower()) and (search:lower() ~= 'refiner' or nil == item.displayName:lower():find('honeycomb')) then
-              if industry_count >= Range_Start and industry_tiers_allowed[item.tier] then
-                industry_total = industry_total + 1 
+          -- Fetches the unit's information
+          local industry_data = get_industry_information(task, local_id)
 
-                -- Gets custom industry unit name
-                local industry_custom_name = core.getElementNameById(local_id)
-                if industry_custom_name == ('%s [%d]'):format(item.displayNameWithSize, local_id) then
-                  industry_custom_name = nil
-                end
+          -- If we have a valid group, let's assign it
+          if industry_data.group_id then
+            if industry_count >= Range_Start and industry_tiers_allowed[item.tier] then
+              industry_total = industry_total + 1 
 
-                local industry_data = {
-                  id = local_id,
-                  num = industry_count,
-                  name = item.displayName,
-                  custom_name = industry_custom_name,
-                  tier = item.tier,
-                  state = 'Loading',
-                  state_code = 0,
-                  item = nil,
-                }
-                
-                industry[industry_count] = industry_data
-                table.insert(industry_groups[group_id].items[item.tier], industry_data)
-              end
-              break
+              industry[industry_count] = industry_data
+              table.insert(industry_groups[industry_data.group_id].items[item.tier], industry_data)
             end
           end
 
           -- Handles limit of industry across all screens
           if industry_count >= industry_max then
             limit_reached = true
-            break
           end
         end
       end
     end
   end)
+
+  -- Gets industry status
+  local function get_industry_unit_status(task, industry_number, industry_unit)
+    -- Loads industry unit information (if none is provided)
+    if not industry_unit then
+      if industry[industry_number] then
+        industry_unit = industry[industry_number]
+      else
+        industry_unit = get_industry_information(task, industry_ids[industry_number])
+      end
+    end
+
+    -- Safety check
+    if not industry_unit then
+      return nil
+    end
+
+    local info = core.getElementIndustryInfoById(industry_unit.id)
+    local industry_status = {}
+
+    -- Produced item information
+    local main_product = info.currentProducts[1]
+    local main_product_item = nil
+    if main_product then
+      main_product_item = getItem(main_product.id)
+    end
+    local itemName = (main_product_item and item_name(main_product_item)) or 'No item selected'
+    industry_status.item = itemName
+
+    -- I/O information
+    local inputs = 0
+    local outputs = 0
+    local output_element_id = nil
+    for plug in task.iterate(core.getElementInPlugsById(industry_unit.id)) do
+      if plug.elementId then
+        inputs = inputs + 1
+      end
+    end
+    for plug in task.iterate(core.getElementOutPlugsById(industry_unit.id)) do
+      if plug.elementId then
+        outputs = outputs + 1
+        output_element_id = plug.elementId
+      end
+    end
+
+    -- For oxygen or hydrogen, override inputs to 1 so we don't see errors
+    if itemName:lower():gmatch('pure hydrogen') or itemName:lower():gmatch('pure oxygen') then
+      inputs = 1
+    end
+
+    industry_status.num_inputs = inputs
+    industry_status.num_outputs = outputs
+
+    -- Schematic information
+    local schematic = nil
+    if #info.requiredSchematicIds > 0 then
+      schematic = getItem(info.requiredSchematicIds[1]).displayName
+    end
+    industry_status.schematic = schematic
+
+    -- Basic informations
+    industry_status.state = industry_states[info.state]
+    industry_status.state_code = info.state
+    industry_status.is_stuck = false
+
+    -- Single batch has been completed?
+    local is_completed = false
+    if industry_status.state_code == 1 and info and info.batchesRequested > 0 and info.batchesRemaining < 1 then
+      is_completed = true
+    end
+    industry_status.completed = (is_completed and info.unitsProduced) or false
+
+    -- Maintain: off, X amount, forever
+    industry_status.maintain = false
+    if info.maintainProductAmount > 0 then
+      industry_status.maintain = info.maintainProductAmount
+
+      -- Handles special case when industry gets "stuck" on "pending"
+      if info.state == 6 then
+        -- Estimates how much mass there should be in that container
+        local output_mass_empty = getItem(core.getElementItemIdById(output_element_id)).unitMass
+        local output_mass_current = core.getElementMassById(output_element_id)
+        local target_mass = (output_mass_empty + main_product_item.unitMass * info.maintainProductAmount) * 0.75
+
+        -- Handles possibly stuck states
+        if output_mass_current < target_mass then
+          industry_status.is_stuck = true
+        end
+      end
+    elseif 1 ~= industry_status.state_code and info.unitsProduced > 0 and info.batchesRemaining < 0 then
+      industry_status.maintain = true
+    end
+
+    -- Special state handling when no inputs or no outputs are provided
+    if industry_status.is_stuck then
+      industry_status.state_code = 5
+    elseif outputs == 0 and industry_status.state_code ~= 5 then
+      industry_status.state = 'No Linked Output'
+      industry_status.state_code = 3
+    elseif inputs == 0 then
+      industry_status.state = 'No Linked Input'
+      industry_status.state_code = 3
+    end
+
+    return industry_status
+  end
 
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
   task_industry.next(function()
@@ -242,9 +380,9 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     -- Setup commands
     local commands = {}
 
-    function commands.find(id)
-      local id = tonumber(id)
-      local industry_unit = industry[id]
+    function commands.find(industry_number)
+      industry_number = tonumber(industry_number)
+      local industry_unit = industry[industry_number]
 
       if industry_unit then
         local pos = vec3(core.getElementPositionById(industry_unit.id))
@@ -255,7 +393,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         set_waypoint(wp)
 
         system.print('')
-        system.print(('Found industry unit #%d:'):format(id))
+        system.print(('Found industry unit #%d:'):format(industry_number))
         system.print((' - Element ID: %d'):format(industry_unit.id))
         system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
         system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
@@ -267,7 +405,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
 
     function commands.error_check()
-      Task(function(task)
+      return Task(function(task)
         local errors = {}
 
         local missing_schematics = {}
@@ -433,16 +571,17 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       end
       is_first_update = false
 
-      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_count))
+      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
       system.print(('Showing range %d to %d, out of %d total units on construct'):format(Range_Start, industry_range_last, industry_count))
       system.print('You can customize this range with the Range Start option')
 
       commands.error_check()
-
-      system.print('')
-      system.print('Commands:')
-      system.print(' - find [code]: sets waypoint to industry unit with matching code')
-      system.print(' - error_check: re-runs the error check above')
+        .next(function()
+          system.print('')
+          system.print('Commands:')
+          system.print(' - find [code]: sets waypoint to industry unit with matching code')
+          system.print(' - error_check: re-runs the error check above')
+        end)
     end
 
     -- Main update loop
@@ -452,91 +591,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         task_update = Task(function(task)
           -- Updates industry information
           for industry_unit, industry_number in task.iterate(industry) do
-            local info = core.getElementIndustryInfoById(industry_unit.id)
-
-            -- Produced item information
-            local main_product = info.currentProducts[1]
-            local main_product_item = nil
-            if main_product then
-              main_product_item = getItem(main_product.id)
-            end
-            local itemName = (main_product_item and item_name(main_product_item)) or 'No item selected'
-            industry[industry_number].item = itemName
-
-            -- I/O information
-            local inputs = 0
-            local outputs = 0
-            local output_element_id = nil
-            for plug in task.iterate(core.getElementInPlugsById(industry[industry_number].id)) do
-              if plug.elementId then
-                inputs = inputs + 1
-              end
-            end
-            for plug in task.iterate(core.getElementOutPlugsById(industry[industry_number].id)) do
-              if plug.elementId then
-                outputs = outputs + 1
-                output_element_id = plug.elementId
-              end
-            end
-
-            -- For oxygen or hydrogen, override inputs to 1 so we don't see errors
-            if itemName:lower():gmatch('pure hydrogen') or itemName:lower():gmatch('pure oxygen') then
-              inputs = 1
-            end
-
-            industry[industry_number].num_inputs = inputs
-            industry[industry_number].num_outputs = outputs
-
-            -- Schematic information
-            local schematic = nil
-            if #info.requiredSchematicIds > 0 then
-              schematic = getItem(info.requiredSchematicIds[1]).displayName
-            end
-            industry[industry_number].schematic = schematic
-
-            -- Basic informations
-            industry[industry_number].state = industry_states[info.state]
-            industry[industry_number].state_code = info.state
-            industry[industry_number].is_stuck = false
-
-            -- Single batch has been completed?
-            local is_completed = false
-            if industry[industry_number].state_code == 1 and info and info.batchesRequested > 0 and info.batchesRemaining < 1 then
-              is_completed = true
-            end
-            industry[industry_number].completed = (is_completed and info.unitsProduced) or false
-
-            -- Maintain: off, X amount, forever
-            industry[industry_number].maintain = false
-            if info.maintainProductAmount > 0 then
-              industry[industry_number].maintain = info.maintainProductAmount
-
-              -- Handles special case when industry gets "stuck" on "pending"
-              if info.state == 6 then
-                -- Estimates how much mass there should be in that container
-                local output_mass_empty = getItem(core.getElementItemIdById(output_element_id)).unitMass
-                local output_mass_current = core.getElementMassById(output_element_id)
-                local target_mass = (output_mass_empty + main_product_item.unitMass * info.maintainProductAmount) * 0.75
-
-                -- Handles possibly stuck states
-                if output_mass_current < target_mass then
-                  industry[industry_number].is_stuck = true
-                end
-              end
-            elseif 1 ~= industry[industry_number].state_code and info.unitsProduced > 0 and info.batchesRemaining < 0 then
-              industry[industry_number].maintain = true
-            end
-
-            -- Special state handling when no inputs or no outputs are provided
-            if industry[industry_number].is_stuck then
-              industry[industry_number].state_code = 5
-            elseif outputs == 0 and industry[industry_number].state_code ~= 5 then
-              industry[industry_number].state = 'No Linked Output'
-              industry[industry_number].state_code = 3
-            elseif inputs == 0 then
-              industry[industry_number].state = 'No Linked Input'
-              industry[industry_number].state_code = 3
-            end
+            object_merge(industry[industry_number], get_industry_unit_status(task, industry_number, industry_unit))
           end
         end).next(render).next(first_update)
       end
