@@ -183,6 +183,11 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   local industry_ids = {}
   local industry_numbers = {}
   local function get_industry_information(task, local_id)
+    -- If the industry unit does not exist, stop here
+    if not industry_numbers[local_id] then
+      return nil
+    end
+
     -- Let's have a cache of industry info to speed-up bootstrap
     local item_id = core.getElementItemIdById(local_id)
 
@@ -360,6 +365,12 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       industry_status.maintain = true
     end
 
+    -- Single Batch
+    industry_status.single_batch = false
+    if false == industry_status.maintain and (1 ~= industry_status.state_code or industry_status.completed) then
+      industry_status.single_batch = info.unitsProduced + math.max(info.batchesRemaining, 0)
+    end
+
     -- Special state handling when no inputs or no outputs are provided
     if industry_status.is_stuck then
       industry_status.state_code = 5
@@ -371,7 +382,27 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       industry_status.state_code = 3
     end
 
-    return industry_status
+    -- Creates a proper label string
+    local label = ('%s: %s'):format(industry_status.state, industry_status.item)
+    if industry_status.is_stuck then
+      -- Batches completed
+      label = ('Stuck: %s'):format(industry_status.state)
+    elseif nil ~= industry_status.completed and false ~= industry_status.completed then
+      -- Batches completed
+      label = ('Ready: %dx %s'):format(industry_status.completed, industry_status.item)
+    elseif industry_status.state_code == 7 then
+      -- Missing schematic
+      label = ('%s: %s'):format(industry_status.state, industry_status.schematic)
+    elseif (industry_status.state_code == 4 or industry_status.state_code == 6) and 'number' == type(industry_status.maintain) then
+      -- Maintain full, fixed amount
+      label = ('Maintain: %dx %s'):format(industry_status.maintain, industry_status.item)
+    elseif industry_status.state_code == 4 and true == industry_status.maintain then
+      -- Maintain full, forever
+      label = ('Maintain: %s'):format(industry_status.item)
+    end
+    industry_status.state_label = label
+
+    return industry_status, industry_unit
   end
 
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
@@ -485,6 +516,35 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       end)
     end
 
+    function commands.info(industry_number)
+      Task(function(task)
+        industry_number = tonumber(industry_number)
+        
+        local industry_status, industry_unit = get_industry_unit_status(task, industry_number)
+
+        if industry_status then
+          system.print('')
+          system.print(('Status for industry #%d:'):format(industry_number))
+          system.print((' - Element ID: %d'):format(industry_unit.id))
+          system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
+          system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
+
+          -- Prints batch type
+          if industry_status.maintain == true then
+            system.print(' - Batch Type: Run Indefinitely')
+          elseif 'number' == type(industry_status.maintain) then
+            system.print((' - Batch Type: Maintain'):format(industry_status.maintain))
+          elseif industry_status.single_batch then
+            system.print((' - Batch Type: Single Batch'):format(industry_status.single_batch))
+          end
+
+          system.print((' - Status: %s'):format(industry_status.state_label))
+        else
+          system.print('Industry unit not found!')
+        end
+      end)
+    end
+
     -- Main render loop
     local task_render = nil
     local function render()
@@ -580,6 +640,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           system.print('')
           system.print('Commands:')
           system.print(' - find [code]: sets waypoint to industry unit with matching code')
+          system.print(' - info [code]: views information and status for an industry unit')
           system.print(' - error_check: re-runs the error check above')
         end)
     end
