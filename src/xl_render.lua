@@ -59,13 +59,13 @@ end
 
 function render(item, layer, x, y)
   if 'string' == type(item) then
-    renderTitle(item, layer, x, y)
+    render_title(item, layer, x, y)
   else
-    renderItem(item, layer, x, y)
+    render_item(item, layer, x, y)
   end
 end
 
-function renderTitle(title, layer, x, y)
+function render_title(title, layer, x, y)
   if not is_text_mode then
     setNextStrokeColor(layer, color(title_color))
     setNextStrokeWidth(layer, 1)
@@ -76,7 +76,7 @@ function renderTitle(title, layer, x, y)
   addText(layer, font_title, title, x + text_padding, y + text_padding / 2)
 end
 
-function renderItem(item, layer, x, y)
+function render_item(item, layer, x, y)
   local num = pad(item[1], 5)
   local tier = item[2]
   local tier_color = tier_colors[tier + 1]

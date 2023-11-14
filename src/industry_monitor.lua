@@ -186,7 +186,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   -- Gets items by id with caching
   local item_cache = {}
-  local function getItem(id)
+  local function get_item(id)
     if not item_cache[id] then
       item_cache[id] = system.getItem(id)
     end
@@ -206,7 +206,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     local item_id = core.getElementItemIdById(local_id)
 
     -- Let's extract current industry info
-    local item = getItem(item_id)
+    local item = get_item(item_id)
 
     -- Gets custom industry unit name
     local industry_custom_name = core.getElementNameById(local_id)
@@ -258,7 +258,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           local item_id = core.getElementItemIdById(local_id)
 
           -- Let's extract current industry info
-          local item = getItem(item_id)
+          local item = get_item(item_id)
 
           -- Counts up until limit_reached == true, this will determine our max number
           industry_range_last = industry_range_last + 1
@@ -302,7 +302,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     local main_product = info.currentProducts[1]
     local main_product_item = nil
     if main_product then
-      main_product_item = getItem(main_product.id)
+      main_product_item = get_item(main_product.id)
     end
     local itemName = (main_product_item and item_name(main_product_item)) or 'No item selected'
     industry_status.item = itemName
@@ -335,7 +335,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     -- Schematic information
     local schematic = nil
     if #info.requiredSchematicIds > 0 then
-      schematic = getItem(info.requiredSchematicIds[1]).displayName
+      schematic = get_item(info.requiredSchematicIds[1]).displayName
     end
     industry_status.schematic = schematic
 
@@ -359,7 +359,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       -- Handles special case when industry gets "stuck" on "pending"
       if info.state == 6 then
         -- Estimates how much mass there should be in that container
-        local output_mass_empty = getItem(core.getElementItemIdById(output_element_id)).unitMass
+        local output_mass_empty = get_item(core.getElementItemIdById(output_element_id)).unitMass
         local output_mass_current = core.getElementMassById(output_element_id)
         local target_mass = (output_mass_empty + main_product_item.unitMass * info.maintainProductAmount) * 0.75
 
