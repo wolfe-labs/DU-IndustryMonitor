@@ -23,6 +23,8 @@ Range_Start = math.max(1, Range_Start)
 local json = require('json')
 local Task = require('tasks')
 
+local version_string = '1.0.4'
+
 local function embed_json(data)
   return ("data = require('json').decode('%s')")
     :format(
@@ -42,13 +44,13 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   -- Ensures a core is linked
   local core = library.getCoreUnit()
   if not core then
-    system.print('ERROR: Core Unit not connected!')
+    print('ERROR: Core Unit not connected!')
     return unit.exit()
   end
 
   -- Ensures at least one screen is linked
   if #screens == 0 then
-    system.print('ERROR: No screen not connected!')
+    print('ERROR: No screen not connected!')
     return unit.exit()
   end
 
@@ -474,22 +476,160 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
   task_industry.next(function()
 
+    -- Setup text-mode
+    local text_output = {}
+    local is_activated_via_plug = unit.getSignalIn('in') == 1
+
+    -- Main render loop
+    local task_render = nil
+    local function is_rendering()
+      return task_render and not task_render.completed()
+    end
+    local function render()
+      if not is_rendering() then
+        task_render = Task(function(task)
+          -- Detects text mode
+          local is_text_mode = is_activated_via_plug and #text_output > 0
+
+          -- Creates main listing, sorts by tier
+          local entries = {}
+          if is_text_mode then
+            entries = text_output
+          else
+            for group in task.iterate(industry_groups) do
+              local items = {}
+
+              -- Adds title
+              table.insert(items, group.name)
+
+              -- Adds items
+              for tier_items in task.iterate(group.items) do
+                for industry_unit in task.iterate(tier_items) do
+                  local is_running = industry_unit.state_code == 2 or industry_unit.state == 6
+
+                  -- Should we show the industry unit name instead of the item?
+                  local display_name = industry_unit.item or ''
+                  if Show_Industry_Name and industry_unit.custom_name then
+                    display_name = industry_unit.custom_name
+                  end
+
+                  table.insert(items, {
+                    industry_unit.num,
+                    industry_unit.tier,
+                    is_running,
+                    industry_unit.state_code,
+                    industry_unit.state,
+                    display_name,
+                    industry_unit.completed,
+                    industry_unit.schematic or '',
+                    industry_unit.maintain,
+                  })
+                end
+              end
+
+              -- If we have any items (other than the category heading) let's add it to the render queue
+              if #items > 1 then
+                entries = array_merge(entries, items)
+              end
+            end
+          end
+
+          -- Create pagination
+          local pages = {}
+          local current_page = 0
+          local current_page_size = page_size
+          for entry in task.iterate(entries) do
+            if current_page_size == page_size then
+              current_page = current_page + 1
+              current_page_size = 0
+              pages[current_page] = {}
+            end
+            current_page_size = current_page_size + 1
+            
+            table.insert(pages[current_page], entry)
+          end
+        
+          -- Goes through each of the pages and renders their respective pages
+          for screen, page_number in task.iterate(screens) do
+            if pages[page_number] then
+              screen.setRenderScript(
+                table.concat({
+                  embed_json({
+                    rows = pages[page_number] or {},
+                    text_mode = is_text_mode,
+                  }),
+                  ui_render_script,
+                }, '\n')
+              )
+              screen.activate()
+            else
+              screen.setRenderScript('')
+              screen.deactivate()
+            end
+          end
+        end)
+      end
+    end
+    
+    -- Text-mode toggles
+    local function print(...)
+      local strings = {}
+      for _, value in pairs({ ... }) do
+        table.insert(strings, tostring(value))
+      end
+
+      if is_activated_via_plug then
+        table.insert(text_output, table.concat(strings, ' '))
+
+        if not is_rendering() then
+          render()
+        end
+      else
+        system.print(table.concat(strings, ' '))
+      end
+    end
+    local function printf(fmt, ...)
+      print(fmt:format(...))
+    end
+
+    -- When in text-mode, hijack the system.print so we can output to the screen
+    if is_activated_via_plug then
+      system.print = print
+    end
+
     -- Setup commands
     local commands = {}
 
+    function commands.about()
+      print('')
+      if is_activated_via_plug then
+        printf('System version: v%s', version_string)
+      end
+      printf('Registered %d industry units out of %d max', industry_total, industry_max)
+      printf('Showing range %d to %d, out of %d total units on construct', Range_Start, industry_range_last, industry_count)
+      print('You can customize this range with the Range Start option')
+    end
+
     function commands.help()
-      system.print('')
-      system.print('Commands:')
-      system.print(' - help: prints list of commands')
-      system.print(' - find [code]: sets waypoint to industry unit with matching code')
-      system.print(' - info [code]: views information and status for an industry unit')
-      system.print(' - error_check: re-runs the error check above')
+      print('')
+      print('Commands:')
+      print(' - help: prints list of commands')
+      print(' - about: shows information about the script and current range')
+      print(' - find [code]: sets waypoint to industry unit with matching code')
+      print(' - info [code]: views information and status for an industry unit')
+      print(' - trace [code]: runs complete error check on an industry unit')
+      print(' - error_check: re-runs the error check above')
+
+      if is_activated_via_plug then
+        print(' - clear: clears text mode and goes back to industry view')
+      end
     end
 
     function commands.find(industry_number)
       industry_number = tonumber(industry_number)
       local industry_unit = industry[industry_number]
 
+      print('')
       if industry_unit then
         local pos = vec3(core.getElementPositionById(industry_unit.id))
           -- The position will always be on the bottom of the industry unit, so let's position it 0.5m into it to make it easier to find
@@ -498,15 +638,14 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         local wp = get_waypoint(local_to_world(pos))
         set_waypoint(wp)
 
-        system.print('')
-        system.print(('Found industry unit #%d:'):format(industry_number))
-        system.print((' - Element ID: %d'):format(industry_unit.id))
-        system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
-        system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
-        system.print((' - Position: %s'):format(wp))
-        system.print('Set waypoint to requested industry unit!')
+        printf('Found industry unit #%d:', industry_number)
+        printf(' - Element ID: %d', industry_unit.id)
+        printf(' - Element Type: %s', core.getElementDisplayNameById(industry_unit.id))
+        printf(' - Element Name: %s', industry_unit.custom_name or core.getElementNameById(industry_unit.id))
+        printf(' - Position: %s', wp)
+        print('Set waypoint to requested industry unit!')
       else
-        system.print('Industry unit not found!')
+        print('Industry unit not found!')
       end
     end
 
@@ -575,18 +714,19 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         -- Renders errors
         if #errors > 0 then
           for error in task.iterate(errors) do
-            system.print('')
+            print('')
             
             if 'string' == type(error) then
-              system.print(error)
+              print(error)
             else
               for line in task.iterate(error) do
-                system.print(line)
+                print(line)
               end
             end
           end
         else
-          system.print('No errors have been found!')
+          print('')
+          print('No errors have been found!')
         end
       end)
     end
@@ -597,25 +737,25 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         
         local industry_status, industry_unit = get_industry_unit_status(task, industry_number)
 
+        print('')
         if industry_status then
-          system.print('')
-          system.print(('Status for industry #%d:'):format(industry_number))
-          system.print((' - Element ID: %d'):format(industry_unit.id))
-          system.print((' - Element Type: %s'):format(core.getElementDisplayNameById(industry_unit.id)))
-          system.print((' - Element Name: %s'):format(industry_unit.custom_name or core.getElementNameById(industry_unit.id)))
+          printf('Status for industry #%d:', industry_number)
+          printf(' - Element ID: %d', industry_unit.id)
+          printf(' - Element Type: %s', core.getElementDisplayNameById(industry_unit.id))
+          printf(' - Element Name: %s', industry_unit.custom_name or core.getElementNameById(industry_unit.id))
 
           -- Prints batch type
           if industry_status.maintain == true then
-            system.print(' - Batch Type: Run Indefinitely')
+            print(' - Batch Type: Run Indefinitely')
           elseif 'number' == type(industry_status.maintain) then
-            system.print((' - Batch Type: Maintain'):format(industry_status.maintain))
+            printf(' - Batch Type: Maintain', industry_status.maintain)
           elseif industry_status.single_batch then
-            system.print((' - Batch Type: Single Batch'):format(industry_status.single_batch))
+            printf(' - Batch Type: Single Batch', industry_status.single_batch)
           end
 
-          system.print((' = %s'):format(industry_status.state_label))
+          printf(' = %s', industry_status.state_label)
         else
-          system.print('Industry unit not found!')
+          print('Industry unit not found!')
         end
       end)
     end
@@ -626,9 +766,9 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
         local industry_status, industry_unit = get_industry_unit_status(task, industry_number)
         
+        print('')
         if industry_status then
-          system.print('')
-          system.print(('Checking industry for errors: #%d'):format(industry_number))
+          printf('Checking industry for errors: #%d', industry_number)
 
           local function test_industry_status(industry_status)
             -- Test for some common status codes
@@ -689,129 +829,53 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           -- We have a simple fix
           if 'boolean' == type(result) then
             if result then
-              return system.print(message)
+              return print(message)
             else
-              system.print('Found issue with the industry unit:')
-              system.print((' - %s'):format(message))
+              print('Found issue with the industry unit:')
+              printf(' - %s', message)
               return
             end
           end
 
           -- No simple fix, let's use recursion (this will happen when ingredients are missing)
-          system.print('Industry unit has the following status:')
-          system.print((' - %s'):format(industry_status.state_label))
-          system.print('Checking upstream industry for clues...')
+          print('Industry unit has the following status:')
+          printf(' - %s', industry_status.state_label)
+          print('Checking upstream industry for clues...')
           local errors = {}
           find_upstream_issues(industry_unit, errors)
 
           -- Prints all errors
           if #errors > 0 then
-            system.print('Found possible causes for the issue:')
+            print('Found possible causes for the issue:')
             for error in task.iterate(errors) do
-              system.print((' - %s'):format(error))
+              printf(' - %s', error)
             end
           else
-            system.print('Found no issues with upstream industry!')
+            print('Found no issues with upstream industry!')
           end
         else
-          system.print('Industry unit not found!')
+          print('Industry unit not found!')
         end
       end)
     end
 
-    -- Main render loop
-    local task_render = nil
-    local function render()
-      if (not task_render) or task_render.completed() then
-        task_render = Task(function(task)
-          -- Creates main listing, sorts by tier
-          local entries = {}
-          for group in task.iterate(industry_groups) do
-            local items = {}
+    function commands.clear(skip_render)
+      text_output = {}
 
-            -- Adds title
-            table.insert(items, group.name)
-
-            -- Adds items
-            for tier_items in task.iterate(group.items) do
-              for industry_unit in task.iterate(tier_items) do
-                local is_running = industry_unit.state_code == 2 or industry_unit.state == 6
-
-                -- Should we show the industry unit name instead of the item?
-                local display_name = industry_unit.item or ''
-                if Show_Industry_Name and industry_unit.custom_name then
-                  display_name = industry_unit.custom_name
-                end
-
-                table.insert(items, {
-                  industry_unit.num,
-                  industry_unit.tier,
-                  is_running,
-                  industry_unit.state_code,
-                  industry_unit.state,
-                  display_name,
-                  industry_unit.completed,
-                  industry_unit.schematic or '',
-                  industry_unit.maintain,
-                })
-              end
-            end
-
-            -- If we have any items (other than the category heading) let's add it to the render queue
-            if #items > 1 then
-              entries = array_merge(entries, items)
-            end
-          end
-
-          -- Create pagination
-          local pages = {}
-          local current_page = 0
-          local current_page_size = page_size
-          for entry in task.iterate(entries) do
-            if current_page_size == page_size then
-              current_page = current_page + 1
-              current_page_size = 0
-              pages[current_page] = {}
-            end
-            current_page_size = current_page_size + 1
-            
-            table.insert(pages[current_page], entry)
-          end
-        
-          -- Goes through each of the pages and renders their respective pages
-          for screen, page_number in task.iterate(screens) do
-            if pages[page_number] then
-              screen.setRenderScript(
-                table.concat({
-                  embed_json({
-                    industry_statuses = pages[page_number] or {},
-                    text_mode = false,
-                  }),
-                  ui_render_script,
-                }, '\n')
-              )
-              screen.activate()
-            else
-              screen.setRenderScript('')
-              screen.deactivate()
-            end
-          end
-        end)
+      if not skip_render then
+        render()
       end
     end
 
     -- This runs only after first status update
     local is_first_update = true
     local function first_update()
-      if not is_first_update then
+      if not is_first_update or is_activated_via_plug then
         return
       end
       is_first_update = false
 
-      system.print(('Registered %d industry units out of %d max'):format(industry_total, industry_max))
-      system.print(('Showing range %d to %d, out of %d total units on construct'):format(Range_Start, industry_range_last, industry_count))
-      system.print('You can customize this range with the Range Start option')
-
+      commands.about()
       commands.error_check()
         .next(commands.help)
     end
@@ -847,13 +911,19 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
       -- Invokes the command
       if 'function' == type(commands[command]) then
+        -- Special handler for text mode
+        if is_activated_via_plug then
+          commands.clear(true)
+          printf('> %s', text)
+        end
+
         commands[command](table.unpack(arguments))
       end
     end)
   end)
 
   return {
-    version = '1.0.4',
+    version = version_string,
   }
 end
 
