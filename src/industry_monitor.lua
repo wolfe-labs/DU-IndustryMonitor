@@ -477,6 +477,15 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     -- Setup commands
     local commands = {}
 
+    function commands.help()
+      system.print('')
+      system.print('Commands:')
+      system.print(' - help: prints list of commands')
+      system.print(' - find [code]: sets waypoint to industry unit with matching code')
+      system.print(' - info [code]: views information and status for an industry unit')
+      system.print(' - error_check: re-runs the error check above')
+    end
+
     function commands.find(industry_number)
       industry_number = tonumber(industry_number)
       local industry_unit = industry[industry_number]
@@ -774,7 +783,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             if pages[page_number] then
               screen.setRenderScript(
                 table.concat({
-                  embed_json(pages[page_number] or {}),
+                  embed_json({
+                    industry_statuses = pages[page_number] or {},
+                    text_mode = false,
+                  }),
                   ui_render_script,
                 }, '\n')
               )
@@ -801,13 +813,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       system.print('You can customize this range with the Range Start option')
 
       commands.error_check()
-        .next(function()
-          system.print('')
-          system.print('Commands:')
-          system.print(' - find [code]: sets waypoint to industry unit with matching code')
-          system.print(' - info [code]: views information and status for an industry unit')
-          system.print(' - error_check: re-runs the error check above')
-        end)
+        .next(commands.help)
     end
 
     -- Main update loop
