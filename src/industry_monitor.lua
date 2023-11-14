@@ -160,13 +160,25 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   -- Utility to print an item name
   local function item_name(item)
+    local name = item
+    local size = ''
+    if 'table' == type(item) then
+      name = item.displayName
+      size = item.size or ''
+    end
+
     return ('%s %s'):format(
-      item.displayName
+      name
+        -- Abbreviates some names
         :gsub('Atmospheric', 'Atmo.')
         :gsub('Expanded', 'Exp.')
         :gsub('Uncommon', 'Unc.')
-        :gsub('Advanced', 'Adv.'),
-      (item.size or ''):upper()
+        :gsub('Advanced', 'Adv.')
+
+        -- Trims out spaces at beginning/end
+        :gsub("^%s+", "")
+        :gsub("%s+$", ""),
+      size:upper()
     )
   end
 
@@ -216,10 +228,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       name = item.displayName,
       group_id = group,
       custom_name = industry_custom_name,
+      is_transfer_unit = 'number' == type(item.displayName:lower():find('transfer unit')),
       tier = item.tier,
-      state = 'Loading',
-      state_code = 0,
-      item = nil,
     }
   end
 
@@ -276,13 +286,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   -- Gets industry status
   local function get_industry_unit_status(task, industry_number, industry_unit)
     -- Loads industry unit information (if none is provided)
-    if not industry_unit then
-      if industry[industry_number] then
-        industry_unit = industry[industry_number]
-      else
-        industry_unit = get_industry_information(task, industry_ids[industry_number])
-      end
-    end
+    industry_unit = industry_unit or industry[industry_number] or get_industry_information(task, industry_ids[industry_number])
 
     -- Safety check
     if not industry_unit then
@@ -300,6 +304,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
     local itemName = (main_product_item and item_name(main_product_item)) or 'No item selected'
     industry_status.item = itemName
+    industry_status.item_id = (main_product_item and main_product_item.id) or nil
 
     -- I/O information
     local inputs = 0
@@ -403,6 +408,67 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     industry_status.state_label = label
 
     return industry_status, industry_unit
+  end
+
+  -- Gets industry providing input materials
+  local function get_industry_provider_ids(task, industry_number)
+    local industry_unit = industry[industry_number] or get_industry_information(task, industry_ids[industry_number])
+
+    -- Safety check
+    if not industry_unit then
+      return nil
+    end
+
+    -- Gets unit current status (for the schematic)
+    local industry_status = get_industry_unit_status(task, industry_number)
+
+    -- This is out output
+    local industry_providers = {}
+
+    -- Gets schematic information
+    if industry_status.item_id then
+      -- Fills in the ingredients
+      for recipe in task.iterate(system.getRecipes(industry_status.item_id)) do
+        if industry_unit.is_transfer_unit then
+          for product in task.iterate(recipe.products) do
+            industry_providers[product.id] = {}
+          end
+        else
+          for ingredient in task.iterate(recipe.ingredients) do
+            industry_providers[ingredient.id] = {}
+          end
+        end
+      end
+
+      -- Loops through each of the connected containers
+      for plug_current_industry in task.iterate(core.getElementInPlugsById(industry_unit.id)) do
+        if plug_current_industry.elementId then
+          -- Loop through each of the inputs for each container
+          for plug_container in task.iterate(core.getElementInPlugsById(plug_current_industry.elementId)) do
+            -- Check if we have a valid industry connected
+            if plug_container.elementId and industry_numbers[plug_container.elementId] then
+              -- Pull the information from that industry unit
+              local provider_unit = get_industry_information(task, plug_container.elementId)
+              local provider_status = get_industry_unit_status(task, provider_unit.num)
+
+              -- Maps the industry
+              if provider_status.item_id and industry_providers[provider_status.item_id] then
+                table.insert(industry_providers[provider_status.item_id], provider_unit.num)
+              end
+            end
+          end
+        end
+      end
+    end
+
+    -- Clean-up
+    for providers, ingredient_id in task.iterate(industry_providers) do
+      if #providers == 0 then
+        industry_providers[ingredient_id] = nil
+      end
+    end
+
+    return industry_providers
   end
 
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
@@ -538,7 +604,106 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             system.print((' - Batch Type: Single Batch'):format(industry_status.single_batch))
           end
 
-          system.print((' - Status: %s'):format(industry_status.state_label))
+          system.print((' = %s'):format(industry_status.state_label))
+        else
+          system.print('Industry unit not found!')
+        end
+      end)
+    end
+
+    function commands.trace(industry_number)
+      Task(function(task)
+        industry_number = tonumber(industry_number)
+
+        local industry_status, industry_unit = get_industry_unit_status(task, industry_number)
+        
+        if industry_status then
+          system.print('')
+          system.print(('Checking industry for errors: #%d'):format(industry_number))
+
+          local function test_industry_status(industry_status)
+            -- Test for some common status codes
+            local code = industry_status.state_code
+            if industry_status.is_stuck then
+              return false, 'This industry unit seems stuck!'
+            elseif code == 7 then
+              return false, 'This industry unit is missing schematics!'
+            elseif industry_status.num_inputs == 0 then
+              return false, 'This industry unit is missing inputs!'
+            elseif industry_status.num_outputs == 0 or code == 5 then
+              return false, 'This industry unit is missing outputs!'
+            elseif not industry_status.item_id then
+              return false, 'This industry unit has no selected item!'
+            elseif code == 1 then
+              return false, 'This industry unit is stopped!'
+            elseif code == 2 or industry_status.state_code == 4 or code == 6 then
+              return true, 'This industry unit seems to be okay!'
+            end
+
+            -- Might require further investigation
+            return nil
+          end
+
+          -- This function recurses into an unit's providers to find for errors
+          local function find_upstream_issues(industry_unit, errors)
+            local industry_providers = get_industry_provider_ids(task, industry_unit.num)
+            local provider_count = 0
+            for providers, ingredient_id in task.iterate(industry_providers) do
+              for provider_id in task.iterate(providers) do
+                provider_count = provider_count + 1
+
+                local provider_status, provider_unit = get_industry_unit_status(task, provider_id)
+                local result, message = test_industry_status(provider_status)
+                
+                -- Checks if something failed
+                if not result then
+                  if 'boolean' == type(result) then
+                    -- Checks for easy fixes
+                    table.insert(errors, ('%s [%d]: %s (makes %s)'):format(item_name(provider_unit.name), provider_unit.num, message, item_name(provider_status.item)))
+                  else
+                    -- We'll need to recurse further
+                    find_upstream_issues(provider_unit, errors)
+                  end
+                end
+              end
+            end
+
+            if provider_count == 0 then
+              local industry_status = get_industry_unit_status(task, industry_unit.num)
+              table.insert(errors, ('%s [%d]: %s (makes %s)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.state_label, item_name(industry_status.item)))
+            end
+          end
+
+          -- Tests current industry
+          local result, message = test_industry_status(industry_status)
+
+          -- We have a simple fix
+          if 'boolean' == type(result) then
+            if result then
+              return system.print(message)
+            else
+              system.print('Found issue with the industry unit:')
+              system.print((' - %s'):format(message))
+              return
+            end
+          end
+
+          -- No simple fix, let's use recursion (this will happen when ingredients are missing)
+          system.print('Industry unit has the following status:')
+          system.print((' - %s'):format(industry_status.state_label))
+          system.print('Checking upstream industry for clues...')
+          local errors = {}
+          find_upstream_issues(industry_unit, errors)
+
+          -- Prints all errors
+          if #errors > 0 then
+            system.print('Found possible causes for the issue:')
+            for error in task.iterate(errors) do
+              system.print((' - %s'):format(error))
+            end
+          else
+            system.print('Found no issues with upstream industry!')
+          end
         else
           system.print('Industry unit not found!')
         end
