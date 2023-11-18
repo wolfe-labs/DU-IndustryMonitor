@@ -192,6 +192,24 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     return item_cache[id]
   end
 
+  -- Gets the main recipe of something
+  local function get_main_recipe(task, id)
+    local recipes = system.getRecipes(id)
+
+    local largest_recipe = { 0, nil }
+    for recipe in task.iterate(recipes) do
+      for product in task.iterate(recipe.products) do
+        if product.id == id then
+          if product.quantity > largest_recipe[1] then
+            largest_recipe = { product.quantity, recipe }
+          end
+        end
+      end
+    end
+
+    return largest_recipe[2]
+  end
+
   -- Gets industry base information
   local industry_ids = {}
   local industry_numbers = {}
@@ -425,6 +443,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
     -- This is out output
     local industry_providers = {}
+    local container_providers = {}
 
     -- Gets schematic information
     if industry_status.item_id then
@@ -444,6 +463,9 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       -- Loops through each of the connected containers
       for plug_current_industry in task.iterate(core.getElementInPlugsById(industry_unit.id)) do
         if plug_current_industry.elementId then
+          -- Saves the current container
+          table.insert(container_providers, plug_current_industry.elementId)
+
           -- Loop through each of the inputs for each container
           for plug_container in task.iterate(core.getElementInPlugsById(plug_current_industry.elementId)) do
             -- Check if we have a valid industry connected
@@ -469,7 +491,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       end
     end
 
-    return industry_providers
+    return industry_providers, container_providers
   end
 
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
@@ -796,9 +818,14 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
           -- This function recurses into an unit's providers to find for errors
           local function find_upstream_issues(industry_unit, errors)
-            local industry_providers = get_industry_provider_ids(task, industry_unit.num)
+            local industry_status = get_industry_unit_status(task, industry_unit.num)
+            local industry_providers, container_providers = get_industry_provider_ids(task, industry_unit.num)
             local provider_count = 0
+            local ingredient_ids = {}
             for providers, ingredient_id in task.iterate(industry_providers) do
+              -- Marks ingredient as present
+              ingredient_ids[ingredient_id] = true
+
               for provider_id in task.iterate(providers) do
                 provider_count = provider_count + 1
 
@@ -818,9 +845,16 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               end
             end
 
-            if provider_count == 0 then
+            if provider_count == 0 and #container_providers == 0 then
               local industry_status = get_industry_unit_status(task, industry_unit.num)
               table.insert(errors, ('%s [%d]: has no providers (%s)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.state_label))
+            elseif industry_status.item_id ~= nil then
+              local recipe = get_main_recipe(task, industry_status.item_id)
+              for ingredient in task.iterate(recipe.ingredients) do
+                if not ingredient_ids[ingredient.id] then
+                  table.insert(errors, ('%s [%d]: missing ingredient (%s)'):format(item_name(industry_unit.name), industry_unit.num, item_name(get_item(ingredient.id))))
+                end
+              end
             end
           end
 
