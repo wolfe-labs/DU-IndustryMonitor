@@ -819,7 +819,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
             if provider_count == 0 then
               local industry_status = get_industry_unit_status(task, industry_unit.num)
-              table.insert(errors, ('%s [%d]: %s (makes %s)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.state_label, item_name(industry_status.item)))
+              table.insert(errors, ('%s [%d]: has no providers (%s)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.state_label))
             end
           end
 
