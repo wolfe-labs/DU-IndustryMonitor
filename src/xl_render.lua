@@ -49,12 +49,7 @@ local function color(c, i, a)
 end
 
 function pad(number, digits)
-  local zeros = digits - string.len(number)
-  local result = ''
-  for i = 1, zeros do
-    result = result .. '0'
-  end
-  return result .. number
+  return string.rep('0', digits - string.len(number)) .. number
 end
 
 function render(item, layer, x, y)
@@ -76,8 +71,9 @@ function render_title(title, layer, x, y)
   addText(layer, font_title, title, x + text_padding, y + text_padding / 2)
 end
 
+local number_digits = data.digits or 0
 function render_item(item, layer, x, y)
-  local num = pad(item[1], 5)
+  local num = pad(item[1], number_digits)
   local tier = item[2]
   local tier_color = tier_colors[tier + 1]
   local is_running = item[3]

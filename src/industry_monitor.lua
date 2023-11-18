@@ -474,6 +474,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   -- This function will be called when the above task gets completed, it will set-up update and rendering tasks, along with any commands
   task_industry.next(function()
+    local industry_number_digits = string.len(industry_count)
 
     -- Setup text-mode
     local text_output = {}
@@ -554,6 +555,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               screen.setRenderScript(
                 table.concat({
                   embed_json({
+                    digits = industry_number_digits,
                     rows = pages[page_number] or {},
                     text_mode = is_text_mode,
                   }),
