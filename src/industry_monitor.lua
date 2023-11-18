@@ -360,10 +360,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         -- Estimates how much mass there should be in that container
         local output_mass_empty = get_item(core.getElementItemIdById(output_element_id)).unitMass
         local output_mass_current = core.getElementMassById(output_element_id)
-        local target_mass = (output_mass_empty + main_product_item.unitMass * info.maintainProductAmount) * 0.75
+        local target_mass = output_mass_empty + (main_product_item.unitMass * info.maintainProductAmount) * 0.75
 
         -- Handles possibly stuck states
-        if output_mass_current < target_mass then
+        if target_mass - output_mass_current > 0.0000001 then
           industry_status.is_stuck = true
         end
       end
