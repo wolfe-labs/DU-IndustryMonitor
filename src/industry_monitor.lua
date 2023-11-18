@@ -23,7 +23,7 @@ Range_Start = math.max(1, Range_Start)
 local json = require('json')
 local Task = require('tasks')
 
-local version_string = '1.0.4'
+local version_string = '1.1.0'
 
 local function embed_json(data)
   return ("data = require('json').decode('%s')")
