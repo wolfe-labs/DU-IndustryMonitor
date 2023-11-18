@@ -175,13 +175,12 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
         :gsub('Atmospheric', 'Atmo.')
         :gsub('Expanded', 'Exp.')
         :gsub('Uncommon', 'Unc.')
-        :gsub('Advanced', 'Adv.')
-
-        -- Trims out spaces at beginning/end
-        :gsub("^%s+", "")
-        :gsub("%s+$", ""),
+        :gsub('Advanced', 'Adv.'),
       size:upper()
     )
+      -- Trims empty spaces at end of name
+      :gsub('^%s+', '')
+      :gsub('%s+$', '')
   end
 
   -- Gets items by id with caching
@@ -325,7 +324,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
 
     -- For oxygen or hydrogen, override inputs to 1 so we don't see errors
-    if itemName:lower():gmatch('pure hydrogen') or itemName:lower():gmatch('pure oxygen') then
+    if itemName:lower() == 'pure hydrogen' or itemName:lower() == 'pure oxygen' then
       inputs = 1
     end
 
