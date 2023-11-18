@@ -28,9 +28,43 @@ You will notice that your screens will be updated with a list of codes on the le
 
 The code's color indicates the industry unit's tier (Basic, Uncommon, Advanced or Rare) and the status color is related to each status, with dimmer colors being used for running/maintaining/pending statuses which usually mean everything's fine, while bright colors being used for anything that needs your attention, such as warnings, errors or single-batches that are completed.
 
-You can locate any industry unit in your factory by taking the code displayed on the screens and typing the following command `find 1234`, where *1234* is the code of your industry. Your destination will be set to the machine, along with some extra information about it being displayed in the Lua chat.
+## Commands
 
-You can also view a list with all detected errors on your construct with the command `error_check`.
+There's a few commands available that can be used with the Industry Monitor, you can input them into the Lua chat. For cases where you are accessing your monitor with a Detection Zone or in VR, you can still input commands into the Lua chat, but the output will be displayed in the screens, which can be cleared with the `clear` command.
+
+The full list of commands can also be accessed in-game by typing `help`.
+
+### Command: Find Industry
+
+**Syntax:** `find 1234` where *1234* is the industry code
+
+Locates an industry unit and sets an waypoint to it.
+
+### Command: Industry Information
+
+**Sytax:** `info 1234` where *1234* is the industry code
+
+Returns details about an Industry Unit such as the Element ID, Type, Name, batch type and status.
+
+### Command: Error Tracer/Debugger
+
+**Syntax:** `trace 1234` where *1234* is the industry code
+
+Tries to automatically debug an error status, by checking the whole production chain and telling what might be wrong.
+
+Maybe some Refiner is missing ingredients or some Smelter got stuck? This should allow you to figure it out.
+
+### Command: Error Check
+
+**Syntax:** `error_check`
+
+Runs the same error check that's displayed when you activate the script directly.
+
+### Command: About
+
+**Syntax:** `about`
+
+Displays the same information when you activate the script, such as current range start and end.
 
 ## Configuration
 
