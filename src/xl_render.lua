@@ -1,3 +1,5 @@
+local is_text_mode = data.text_mode == true
+
 local margin = 8
 local text_size = 10
 local text_padding = 2
@@ -10,7 +12,7 @@ local font_title = loadFont('BankGothic', text_size)
 local title_color = { 1, 1, 1 }
 
 local width, height = getResolution()
-local columns = 4
+local columns = (is_text_mode and 1) or 4
 local column_size = (width - margin) / columns
 local column_items = math.floor(height / line_size)
 
@@ -47,33 +49,31 @@ local function color(c, i, a)
 end
 
 function pad(number, digits)
-  local zeros = digits - string.len(number)
-  local result = ''
-  for i = 1, zeros do
-    result = result .. '0'
-  end
-  return result .. number
+  return string.rep('0', digits - string.len(number)) .. number
 end
 
 function render(item, layer, x, y)
   if 'string' == type(item) then
-    renderTitle(item, layer, x, y)
+    render_title(item, layer, x, y)
   else
-    renderItem(item, layer, x, y)
+    render_item(item, layer, x, y)
   end
 end
 
-function renderTitle(title, layer, x, y)
-  setNextStrokeColor(layer, color(title_color))
-  setNextStrokeWidth(layer, 1)
-  addLine(layer, x - text_padding, y + text_size, x + column_size, y + text_size)
+function render_title(title, layer, x, y)
+  if not is_text_mode then
+    setNextStrokeColor(layer, color(title_color))
+    setNextStrokeWidth(layer, 1)
+    addLine(layer, x - text_padding, y + text_size, x + column_size, y + text_size)
+  end
 
   setNextFillColor(layer, color(title_color))
   addText(layer, font_title, title, x + text_padding, y + text_padding / 2)
 end
 
-function renderItem(item, layer, x, y)
-  local num = pad(item[1], 5)
+local number_digits = data.digits or 0
+function render_item(item, layer, x, y)
+  local num = pad(item[1], number_digits)
   local tier = item[2]
   local tier_color = tier_colors[tier + 1]
   local is_running = item[3]
@@ -112,7 +112,18 @@ function renderItem(item, layer, x, y)
   addText(layer, font_name, label, x + num_width + text_padding, y)
 end
 
-for _, item in pairs(data) do
+-- Special settings for text mode
+if is_text_mode then
+  text_size = 14
+  text_padding = 4
+  line_size = text_size + text_padding
+  
+  font_title = loadFont('FiraMono', text_size)
+  title_color = { 0.75, 0.75, 0.75 }
+end
+
+-- Main loop
+for _, item in pairs(data.rows or {}) do
   local column = math.floor((_ - 1) / column_items)
   local row = (_ - 1) % column_items
   render(item, layers[column], margin / 2 + column * column_size, row * line_size)
