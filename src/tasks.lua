@@ -1,118 +1,177 @@
 --[[
-  Very basic implementation of background tasks
+  Coroutine-based Backkground Tasks API for Dual Universe
+  by Wolfe Labs
+  Version: 0.1.0
 ]]
 
--- Makes sure we only ever use 20% of the instruction limit before yielding
+-- How much CPU time we're allocating for background tasks, defaults to 20%
 local MAX_CPU_TIME = 0.20
 
-local tasks = {}
-local iTasks = 0
+-- This is a list of all our tasks
+local _tasks = {}
+
+-- This is just a counter to calculate the next task index
+local _tasks_index = 0
+
+-- This is a pointer to our current task
+local _current_task = nil
+local _current_task_index = nil
+local _current_task_count = 0
+
+-- Helper function to assert we're inside a task
+local function task_assert()
+  if not _current_task then
+    error('This function must be invoked from inside a running task!')
+  end
+end
+
+-- Helper function to exit a running task
+local function task_exit()
+  _tasks[_current_task_index] = nil
+  coroutine.yield()
+end
+
+-- Helper function to rate-limit inside a task
+local yield_limit = system.getInstructionLimit() * MAX_CPU_TIME
+local function task_cpu_limit()
+  if _current_task then
+    if system.getInstructionCount() >= (yield_limit / math.max(_current_task_count, 1)) then
+      coroutine.yield()
+    end
+  end
+end
+
+-- Helper function that does task processing
+local function task_work()
+  -- Gets an updated task count
+  _current_task_count = 0
+  for _ in pairs(_tasks) do
+    _current_task_count = _current_task_count + 1
+  end
+
+  -- Processes each of the tasks
+  for task_index, task in pairs(_tasks) do
+    _current_task = task
+    _current_task_index = task_index
+    coroutine.resume(task.coroutine)
+  end
+
+  -- Clears existing data after done
+  _current_task = nil
+  _current_task_index = nil
+end
 
 ---@class Task
 local Task = {}
----Emits a signal telling the task is complete along with its return value
-function Task.resolve(result) end
----Emits a signal telling the task is errored
-function Task.reject(error) end
----@param value table The value being iterated over
----@param yield_every number How often we should yield
-function Task.iterate(value, yield_every) end
 
----@param runner fun(task:Task)
-local function task(runner)
-  iTasks = iTasks + 1
-  local id = 0 + iTasks -- We need this here to prevent reference issues
-  local self = {}
+--- Creates a new task
+function Task.new(runner)
+  -- Calculates the new id for our task
+  _tasks_index = _tasks_index + 1
+  local task_id = 0 + _tasks_index
 
-  local callbacks = {}
-  local handlers = {}
+  -- Those will store our task callbacks and event handlers
+  local resolve_callbacks = {}
+  local error_handlers = {}
 
-  tasks[id] = {
-    co = coroutine.create(function(task)
-      local status, ret = pcall(runner, task)
+  -- Initializes the task in memory
+  _tasks[task_id] = {
+    coroutine = coroutine.create(function()
+      local status, ret = pcall(runner)
       if status then
-        task.resolve(ret)
+        Task.resolve(ret)
       else
-        task.reject(ret)
+        Task.reject(ret)
       end
     end),
-    cb = callbacks,
-    eh = handlers,
+    resolve_callbacks = resolve_callbacks,
+    error_handlers = error_handlers,
   }
 
-  function self.next(callback)
-    table.insert(callbacks, callback)
+  -- Pointer to our other pointer
+  local self = nil
+
+  -- Creates our Task Pointer API
+  ---@class TaskPointer
+  local TaskPointer = {}
+
+  function TaskPointer.id()
+    return task_id
+  end
+
+  function TaskPointer.next(callback)
+    table.insert(resolve_callbacks, callback)
     return self
   end
 
-  function self.catch(handler)
-    table.insert(handlers, handler)
+  function TaskPointer.catch(handler)
+    table.insert(error_handlers, handler)
     return self
   end
 
-  function self.completed()
-    return tasks[id] == nil
+  function TaskPointer.completed()
+    return _tasks[task_id] == nil
   end
 
-  function self.id()
-    return id
-  end
+  -- Assigns our API
+  self = setmetatable({}, {
+    __index = TaskPointer,
+  })
 
   return self
 end
 
-local function resolve(_, data, value)
-  -- Resolves the task
-  for _, callback in pairs(data.cb) do
-    callback(value)
-  end
-  tasks[_] = nil
+--- Resolves a task with an optional return value
+function Task.resolve(return_value)
+  task_assert()
 
-  -- Stops executing
-  coroutine.yield()
+  -- Invokes each of the callbacks
+  for _, callback in pairs(_current_task.resolve_callbacks) do
+    callback(return_value)
+  end
+
+  -- Deletes task and stops execution
+  task_exit()
 end
 
-local function reject(_, data, err)
-  if #data.eh == 0 then
-    system.print(('Unhandled error on task #%d: %s'):format(_, err))
+--- Rejects (reports an error) the current task
+function Task.reject(error_message)
+  task_assert()
+
+  -- Special case when no error handlers are present
+  if #_current_task.error_handlers == 0 then
+    system.print(('Unhandled error on task #%d: %s'):format(_current_task_index, tostring(error_message)))
   end
 
-  -- Rejects the task
-  for _, handler in pairs(data.eh) do
-    handler(err)
+  -- Invokes each of the error handlers
+  for _, handler in pairs(_current_task.error_handlers) do
+    handler(error_message)
   end
-  tasks[_] = nil
 
-  -- Stops executing
-  coroutine.yield()
+  -- Deletes task and stops execution
+  task_exit()
 end
 
-local active_task_count = 0
-local yield_limit = system.getInstructionLimit() * MAX_CPU_TIME
-local function do_rate_limiting()
-  if system.getInstructionCount() >= (yield_limit / math.max(active_task_count, 1)) then
-    coroutine.yield()
-  end
-end
-local function iterate(value)
+--- Iterates over an object using a task (can be used outside tasks, too)
+function Task.iterate(object)  
   -- Gets a list of all keys
   local keys = {}
-  for k in pairs(value) do
-    do_rate_limiting()
+  for key in pairs(object) do
+    task_cpu_limit()
     
-    table.insert(keys, k)
+    table.insert(keys, key)
   end
   table.sort(keys)
   
   -- Now, we can actually iterate over that temporary table
-  local i = 0
+  local index = 0
   return function()
-    do_rate_limiting()
+    task_cpu_limit()
     
     -- Increments local iterator, returns value if any
-    i = i + 1
-    if keys[i] then
-      return value[keys[i]], keys[i]
+    index = index + 1
+    if keys[index] then
+      return object[keys[index]], keys[index]
     end
 
     -- This only happens if we don't have any more items
@@ -120,25 +179,16 @@ local function iterate(value)
   end
 end
 
-system:onEvent('onUpdate', function()
-  -- Gets an updated task count
-  active_task_count = 0
-  for _ in pairs(tasks) do
-    active_task_count = active_task_count + 1
-  end
+--- This makes tasks work, make sure you call this from your system.onUpdate event!
+function Task.work()
+  task_work()
+end
 
-  -- Processes each of the tasks
-  for _, data in pairs(tasks) do
-    coroutine.resume(data.co, {
-      resolve = function(value)
-        resolve(_, data, value)
-      end,
-      reject = function(err)
-        reject(_, data, err)
-      end,
-      iterate = iterate,
-    })
-  end
-end)
+-- Special case for DU Lua CLI users
+if system.onEvent then
+  system:onEvent('onUpdate', task_work)
+  Task.work = function() end
+end
 
-return task
+-- Returs our public API
+return Task

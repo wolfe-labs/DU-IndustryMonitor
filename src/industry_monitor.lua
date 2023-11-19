@@ -21,7 +21,7 @@ Show_Industry_Name = false --export: Shows industry name instead of item name
 Range_Start = math.max(1, Range_Start)
 
 local json = require('json')
-local Task = require('tasks')
+local task = require('tasks')
 
 local version_string = '1.1.0'
 
@@ -193,7 +193,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   end
 
   -- Gets the main recipe of something
-  local function get_main_recipe(task, id)
+  local function get_main_recipe(id)
     local recipes = system.getRecipes(id)
 
     local largest_recipe = { 0, nil }
@@ -213,7 +213,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   -- Gets industry base information
   local industry_ids = {}
   local industry_numbers = {}
-  local function get_industry_information(task, local_id)
+  local function get_industry_information(local_id)
     -- If the industry unit does not exist, stop here
     if not industry_numbers[local_id] then
       return nil
@@ -257,7 +257,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   local industry_range_last = 0
   local industry_total = 0
   local industry = {}
-  local task_industry = Task(function(task)
+  local task_industry = task.new(function()
     local ids = core.getElementIdList()
     table.sort(ids)
 
@@ -281,7 +281,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           industry_range_last = industry_range_last + 1
 
           -- Fetches the unit's information
-          local industry_data = get_industry_information(task, local_id)
+          local industry_data = get_industry_information(local_id)
 
           -- If we have a valid group, let's assign it
           if industry_data.group_id then
@@ -303,9 +303,9 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   end)
 
   -- Gets industry status
-  local function get_industry_unit_status(task, industry_number, industry_unit)
+  local function get_industry_unit_status(industry_number, industry_unit)
     -- Loads industry unit information (if none is provided)
-    industry_unit = industry_unit or industry[industry_number] or get_industry_information(task, industry_ids[industry_number])
+    industry_unit = industry_unit or industry[industry_number] or get_industry_information(industry_ids[industry_number])
 
     -- Safety check
     if not industry_unit then
@@ -430,8 +430,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
   end
 
   -- Gets industry providing input materials
-  local function get_industry_provider_ids(task, industry_number)
-    local industry_unit = industry[industry_number] or get_industry_information(task, industry_ids[industry_number])
+  local function get_industry_provider_ids(industry_number)
+    local industry_unit = industry[industry_number] or get_industry_information(industry_ids[industry_number])
 
     -- Safety check
     if not industry_unit then
@@ -439,7 +439,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
 
     -- Gets unit current status (for the schematic)
-    local industry_status = get_industry_unit_status(task, industry_number)
+    local industry_status = get_industry_unit_status(industry_number)
 
     -- This is out output
     local industry_providers = {}
@@ -471,8 +471,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             -- Check if we have a valid industry connected
             if plug_container.elementId and industry_numbers[plug_container.elementId] then
               -- Pull the information from that industry unit
-              local provider_unit = get_industry_information(task, plug_container.elementId)
-              local provider_status = get_industry_unit_status(task, provider_unit.num)
+              local provider_unit = get_industry_information(plug_container.elementId)
+              local provider_status = get_industry_unit_status(provider_unit.num)
 
               -- Maps the industry
               if provider_status.item_id and industry_providers[provider_status.item_id] then
@@ -509,7 +509,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
     local function render()
       if not is_rendering() then
-        task_render = Task(function(task)
+        task_render = task.new(function()
           -- Detects text mode
           local is_text_mode = is_activated_via_plug and #text_output > 0
 
@@ -673,7 +673,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
 
     function commands.error_check()
-      return Task(function(task)
+      return task.new(function()
         local errors = {}
 
         local missing_schematics = {}
@@ -755,10 +755,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
 
     function commands.info(industry_number)
-      Task(function(task)
+      task.new(function()
         industry_number = tonumber(industry_number)
         
-        local industry_status, industry_unit = get_industry_unit_status(task, industry_number)
+        local industry_status, industry_unit = get_industry_unit_status(industry_number)
 
         print('')
         if industry_status then
@@ -784,10 +784,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     end
 
     function commands.trace(industry_number)
-      Task(function(task)
+      task.new(function()
         industry_number = tonumber(industry_number)
 
-        local industry_status, industry_unit = get_industry_unit_status(task, industry_number)
+        local industry_status, industry_unit = get_industry_unit_status(industry_number)
         
         print('')
         if industry_status then
@@ -818,8 +818,8 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
           -- This function recurses into an unit's providers to find for errors
           local function find_upstream_issues(industry_unit, errors)
-            local industry_status = get_industry_unit_status(task, industry_unit.num)
-            local industry_providers, container_providers = get_industry_provider_ids(task, industry_unit.num)
+            local industry_status = get_industry_unit_status(industry_unit.num)
+            local industry_providers, container_providers = get_industry_provider_ids(industry_unit.num)
             local provider_count = 0
             local ingredient_ids = {}
             for providers, ingredient_id in task.iterate(industry_providers) do
@@ -829,7 +829,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               for provider_id in task.iterate(providers) do
                 provider_count = provider_count + 1
 
-                local provider_status, provider_unit = get_industry_unit_status(task, provider_id)
+                local provider_status, provider_unit = get_industry_unit_status(provider_id)
                 local result, message = test_industry_status(provider_status)
                 
                 -- Checks if something failed
@@ -846,10 +846,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
             end
 
             if provider_count == 0 and #container_providers == 0 then
-              local industry_status = get_industry_unit_status(task, industry_unit.num)
+              local industry_status = get_industry_unit_status(industry_unit.num)
               table.insert(errors, ('%s [%d]: has no providers (%s)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.state_label))
             elseif industry_status.item_id ~= nil then
-              local recipe = get_main_recipe(task, industry_status.item_id)
+              local recipe = get_main_recipe(industry_status.item_id)
               for ingredient in task.iterate(recipe.ingredients) do
                 if not ingredient_ids[ingredient.id] then
                   table.insert(errors, ('%s [%d]: missing ingredient (%s)'):format(item_name(industry_unit.name), industry_unit.num, item_name(get_item(ingredient.id))))
@@ -919,10 +919,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     local task_update = nil
     local function update()
       if (not task_update) or task_update.completed() then
-        task_update = Task(function(task)
+        task_update = task.new(function()
           -- Updates industry information
           for industry_unit, industry_number in task.iterate(industry) do
-            object_merge(industry[industry_number], get_industry_unit_status(task, industry_number, industry_unit))
+            object_merge(industry[industry_number], get_industry_unit_status(industry_number, industry_unit))
           end
         end).next(render).next(first_update)
       end
