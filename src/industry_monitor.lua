@@ -294,7 +294,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           end
 
           -- Handles limit of industry across all screens
-          if industry_count >= industry_max then
+          if industry_total >= industry_max then
             limit_reached = true
           end
         end
