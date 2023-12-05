@@ -23,7 +23,7 @@ Range_Start = math.max(1, Range_Start)
 local json = require('json')
 local task = require('tasks')
 
-local version_string = '1.1.0'
+local version_string = '1.1.2'
 
 local function embed_json(data)
   return ("data = require('json').decode('%s')")
@@ -374,7 +374,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       industry_status.maintain = info.maintainProductAmount
 
       -- Handles special case when industry gets "stuck" on "pending"
-      if info.state == 6 then
+      if info.state == 6 or (info.state == 2 and info.remainingTime < 1) then
         -- Estimates how much mass there should be in that container
         local output_mass_empty = get_item(core.getElementItemIdById(output_element_id)).unitMass
         local output_mass_current = core.getElementMassById(output_element_id)
