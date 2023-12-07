@@ -17,13 +17,17 @@ Show_Tier_2 = true --export
 Show_Tier_3 = true --export
 Show_Tier_4 = true --export
 Show_Industry_Name = false --export: Shows industry name instead of item name
+Stuck_After_X_Hours_Jammed = false --export: Marks units as potentially stuck after being jammed for X hours
+Stuck_Detection_Hours = 36 --export: How many hours in jammed status until an unit is considered stuck
 
 Range_Start = math.max(1, Range_Start)
 
 local json = require('json')
 local task = require('tasks')
 
-local version_string = '1.1.2'
+local version_string = '1.2.0'
+
+local stuck_detection_seconds = 3600 * Stuck_Detection_Hours
 
 local function embed_json(data)
   return ("data = require('json').decode('%s')")
@@ -32,6 +36,39 @@ local function embed_json(data)
         :gsub('\\', '\\\\')
         :gsub('\'', '\\\'')
     )
+end
+
+local function round(value, decimals, roundUp)
+  local multiplier = 10 ^ decimals
+  return ((roundUp and math.ceil) or math.floor)(value * multiplier) / multiplier
+end
+
+local function formatSeconds(time)
+  local parts = {}
+
+  if time >= 86400 then
+    local days = math.floor(time / 86400)
+    table.insert(parts, days .. 'd')
+    time = time - 86400 * days
+  end
+
+  if time >= 3600 then
+    local hours = math.floor(time / 3600)
+    table.insert(parts, hours .. 'h')
+    time = time - 3600 * hours
+  end
+
+  if time >= 60 then
+    local minutes = math.floor(time / 60)
+    table.insert(parts, minutes .. 'm')
+    time = time - 60 * minutes
+  end
+  
+  if time > 0 then
+    table.insert(parts, time .. 's')
+  end
+
+  return table.concat(parts, ' ')
 end
 
 ---@param screens table<number,Screen> The screens where everything is going to be rendered
@@ -374,12 +411,28 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       industry_status.maintain = info.maintainProductAmount
 
       -- Handles special case when industry gets "stuck" on "pending"
-      if info.state == 6 or (info.state == 2 and info.remainingTime < 1) then
+      if info.state ~= 1 and (info.state == 6 or (Stuck_After_X_Hours_Jammed and info.remainingTime < -stuck_detection_seconds)) then
+        -- For cases where the "output is full" we'll set a lower target mass, to accurately check it
+        local target_mass_multiplier = 1.0
+        if info.state == 4 then
+          target_mass_multiplier = 0.5
+        end
+
+        -- This is our target maintain quantity, the reason we subtract 1 here is for cases where we're with output full, it shouldn't be a big deal
+        local target_maintain = info.maintainProductAmount
+        if target_maintain > 1 then
+          target_maintain = target_maintain - 1
+        end
+
         -- Estimates how much mass there should be in that container
         local output_mass_empty = get_item(core.getElementItemIdById(output_element_id)).unitMass
         local output_mass_current = core.getElementMassById(output_element_id)
-        local target_mass = output_mass_empty + (main_product_item.unitMass * info.maintainProductAmount) * 0.75
+        local target_mass = output_mass_empty + (main_product_item.unitMass * target_maintain) * 0.75 * target_mass_multiplier
 
+        -- Fixes rounding errors
+        output_mass_current = round(output_mass_current, 2, true)
+        target_mass = round(target_mass, 2)
+        
         -- Handles possibly stuck states
         if target_mass - output_mass_current > 0.0000001 then
           industry_status.is_stuck = true
@@ -387,6 +440,11 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       end
     elseif 1 ~= industry_status.state_code and info.unitsProduced > 0 and info.batchesRemaining < 0 then
       industry_status.maintain = true
+    end
+
+    -- Handles edge case where maintain is set to 0
+    if 'number' == type(industry_status.maintain) and industry_status.maintain < 1 then
+      industry_status.is_stuck = true
     end
 
     -- Single Batch
@@ -410,7 +468,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
     local label = ('%s: %s'):format(industry_status.state, industry_status.item)
     if industry_status.is_stuck then
       -- Batches completed
-      label = ('Stuck: %s'):format(industry_status.state)
+      label = ('Stuck %s'):format(industry_status.state)
     elseif nil ~= industry_status.completed and false ~= industry_status.completed then
       -- Batches completed
       label = ('Ready: %dx %s'):format(industry_status.completed, industry_status.item)
@@ -419,7 +477,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       label = ('%s: %s'):format(industry_status.state, industry_status.schematic)
     elseif (industry_status.state_code == 4 or industry_status.state_code == 6) and 'number' == type(industry_status.maintain) then
       -- Maintain full, fixed amount
-      label = ('Maintain: %dx %s'):format(industry_status.maintain, industry_status.item)
+      label = ('Maintain: %dx %s'):format(math.floor(industry_status.maintain), industry_status.item)
     elseif industry_status.state_code == 4 and true == industry_status.maintain then
       -- Maintain full, forever
       label = ('Maintain: %s'):format(industry_status.item)
@@ -540,11 +598,12 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
                     industry_unit.tier,
                     is_running,
                     industry_unit.state_code,
-                    industry_unit.state,
+                    industry_unit.state_label,
                     display_name,
                     industry_unit.completed,
                     industry_unit.schematic or '',
                     industry_unit.maintain,
+                    industry_unit.is_stuck,
                   })
                 end
               end
@@ -639,7 +698,9 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       print(' - help: prints list of commands')
       print(' - about: shows information about the script and current range')
       print(' - find [code]: sets waypoint to industry unit with matching code')
+      print(' - find_id [id]: same as "find" but using element id')
       print(' - info [code]: views information and status for an industry unit')
+      print(' - info_id [id]: same as "info" but using element id')
       print(' - trace [code]: runs complete error check on an industry unit')
       print(' - error_check: re-runs the error check above')
 
@@ -670,6 +731,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
       else
         print('Industry unit not found!')
       end
+    end
+    
+    function commands.find_id(industry_id)
+      return commands.find(industry_numbers[tonumber(industry_id)])
     end
 
     function commands.error_check()
@@ -781,6 +846,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
           print('Industry unit not found!')
         end
       end)
+    end
+    
+    function commands.info_id(industry_id)
+      return commands.info(industry_numbers[tonumber(industry_id)])
     end
 
     function commands.trace(industry_number)

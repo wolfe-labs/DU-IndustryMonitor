@@ -38,11 +38,15 @@ The full list of commands can also be accessed in-game by typing `help`.
 
 **Syntax:** `find 1234` where *1234* is the industry code
 
+**Sytax:** `find_id 1234` where *1234* is the element id
+
 Locates an industry unit and sets an waypoint to it.
 
 ### Command: Industry Information
 
 **Sytax:** `info 1234` where *1234* is the industry code
+
+**Sytax:** `info_id 1234` where *1234* is the element id
 
 Returns details about an Industry Unit such as the Element ID, Type, Name, batch type and status.
 

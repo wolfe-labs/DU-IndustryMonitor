@@ -84,9 +84,13 @@ function render_item(item, layer, x, y)
   local quantity_completed = item[7]
   local schematic = item[8]
   local maintain = item[9]
+  local is_stuck = item[10]
 
   local label = ('%s: %s'):format(state_label, item_label)
-  if nil ~= quantity_completed and false ~= quantity_completed then
+  if is_stuck then
+    -- Stuck
+    state_color = { 1, 0, 0.5 }
+  elseif nil ~= quantity_completed and false ~= quantity_completed then
     -- Batches completed
     state_color = { 0, 1, 0.75 }
     label = ('Ready: %dx %s'):format(quantity_completed, item_label)
@@ -96,7 +100,7 @@ function render_item(item, layer, x, y)
   elseif (state == 4 or state == 6) and 'number' == type(maintain) then
     -- Maintain full, fixed amount
     state_color = state_colors[6]
-    label = ('Maintain: %dx %s'):format(maintain, item_label)
+    label = ('Maintain: %dx %s'):format(math.floor(maintain), item_label)
   elseif state == 4 and true == maintain then
     -- Maintain full, forever
     state_color = state_colors[6]
