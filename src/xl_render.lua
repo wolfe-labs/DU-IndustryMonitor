@@ -32,14 +32,14 @@ local tier_colors = {
 }
 
 local state_colors = {
-  [0] = { 0.10, 0.10, 0.10 }, -- Loading
-  [1] = { 0.15, 0.15, 0.15 }, -- Stopped
-  [2] = { 0.08, 0.20, 0.05 }, -- Running
-  [3] = { 1.00, 0.50, 0.00 }, -- Missing ingredient
-  [4] = { 1.00, 0.50, 0.00 }, -- Output full
-  [5] = { 1.00, 0.00, 0.00 }, -- No output
-  [6] = { 0.05, 0.15, 0.20 }, -- Pending
-  [7] = { 1.00, 0.00, 0.00 }, -- Missing schematics
+  [0] = data.config.colors.default or  { 0.10, 0.10, 0.10 }, -- Loading
+  [1] = data.config.colors.stopped or { 0.15, 0.15, 0.15 }, -- Stopped
+  [2] = data.config.colors.running or { 0.08, 0.20, 0.05 }, -- Running
+  [3] = data.config.colors.warning or { 1.00, 0.50, 0.00 }, -- Missing ingredient
+  [4] = data.config.colors.warning or { 1.00, 0.50, 0.00 }, -- Output full
+  [5] = data.config.colors.error or { 1.00, 0.00, 0.00 }, -- No output
+  [6] = data.config.colors.pending or { 0.05, 0.15, 0.20 }, -- Pending
+  [7] = data.config.colors.error or { 1.00, 0.00, 0.00 }, -- Missing schematics
 }
 
 local function color(c, i, a)

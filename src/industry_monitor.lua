@@ -1,31 +1,7 @@
--- Public options exposed to Dual Universe
-Refresh_Interval = 5 --export: How often to refresh the screen, in seconds
-Range_Start = 1 --export: Only starts displaying after a certain number of industry
-Include_3D_Printers = true --export
-Include_Assembly_Lines = true --export
-Include_Chemical_Industries = true --export
-Include_Electronics_Industries = true --export
-Include_Glass_Furnaces = true --export
-Include_Honeycomb_Refiners = true --export
-Include_Metalwork_Industries = true --export
-Include_Recyclers = true --export
-Include_Refiners = true --export
-Include_Smelters = true --export
-Include_Transfer_Units = true --export
-Show_Tier_1 = true --export
-Show_Tier_2 = true --export
-Show_Tier_3 = true --export
-Show_Tier_4 = true --export
-Show_Industry_Name = false --export: Shows industry name instead of item name
-Stuck_After_X_Hours_Jammed = false --export: Marks units as potentially stuck after being jammed for X hours
-Stuck_Detection_Hours = 36 --export: How many hours in jammed status until an unit is considered stuck
-
-Range_Start = math.max(1, Range_Start)
-
 local json = require('json')
 local task = require('tasks')
 
-local version_string = '1.2.0'
+local version_string = '1.2.1'
 
 local stuck_detection_seconds = 3600 * Stuck_Detection_Hours
 
@@ -77,6 +53,9 @@ end
 local function IndustryMonitor(screens, page_size, ui_render_script)
   -- Hide widget
   unit.hideWidget()
+
+  -- Render Script configs
+  local render_config = {}
 
   -- Ensures a core is linked
   local core = library.getCoreUnit()
@@ -639,6 +618,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
                     digits = industry_number_digits,
                     rows = pages[page_number] or {},
                     text_mode = is_text_mode,
+                    config = render_config,
                   }),
                   ui_render_script,
                 }, '\n')
@@ -921,10 +901,10 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               local recipe = get_main_recipe(industry_status.item_id)
 
               if recipe then
-              for ingredient in task.iterate(recipe.ingredients) do
-                if not ingredient_ids[ingredient.id] then
-                  table.insert(errors, ('%s [%d]: missing ingredient (%s)'):format(item_name(industry_unit.name), industry_unit.num, item_name(get_item(ingredient.id))))
-                end
+                for ingredient in task.iterate(recipe.ingredients) do
+                  if not ingredient_ids[ingredient.id] then
+                    table.insert(errors, ('%s [%d]: missing ingredient (%s)'):format(item_name(industry_unit.name), industry_unit.num, item_name(get_item(ingredient.id))))
+                  end
                 end
               else
                 table.insert(errors, ('%s [%d]: invalid recipe (%d)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.item_id))
@@ -1033,6 +1013,7 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
 
   return {
     version = version_string,
+    render_config = render_config, 
   }
 end
 
