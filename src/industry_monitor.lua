@@ -919,10 +919,15 @@ local function IndustryMonitor(screens, page_size, ui_render_script)
               table.insert(errors, ('%s [%d]: has no providers (%s)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.state_label))
             elseif industry_status.item_id ~= nil then
               local recipe = get_main_recipe(industry_status.item_id)
+
+              if recipe then
               for ingredient in task.iterate(recipe.ingredients) do
                 if not ingredient_ids[ingredient.id] then
                   table.insert(errors, ('%s [%d]: missing ingredient (%s)'):format(item_name(industry_unit.name), industry_unit.num, item_name(get_item(ingredient.id))))
                 end
+                end
+              else
+                table.insert(errors, ('%s [%d]: invalid recipe (%d)'):format(item_name(industry_unit.name), industry_unit.num, industry_status.item_id))
               end
             end
           end
